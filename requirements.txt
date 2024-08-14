@@ -1,0 +1,7 @@
+astropy-healpix>=0.4
+astro-gdt-fermi @ git+https://github.com/USRA-STI/gdt-fermi.git@18e1a1dec5e7d62fe601ac2269c24b17c7a7a590
+scipy<=1.13.1
+matplotlib<=3.8.3
+astropy<=6.0.0
+notebook
+ipywidgets
