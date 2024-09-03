@@ -79,8 +79,8 @@ response = gts.loadResponse('templates/GBM/direct/nai.npy', templates=[0, 1, 2],
 
 # Get trigger time and spacecraft frames
 trigdat = Trigdat.open(trigdat_file)
-spacecraft_frames = trigdat.poshist
 trigtime = Time(pha2_data[0].trigtime, format='fermi')
+spacecraft_frames = trigdat.poshist
 
 # Run the search
 search = gts.runSearch(pha2_data, response, spacecraft_frames, trigtime, background_range=[-30, 30])
