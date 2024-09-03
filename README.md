@@ -48,19 +48,21 @@ import gts
 from gdt.missions.fermi.time import Time
 from gdt.missions.fermi.gbm.tte import GbmTte
 from gdt.missions.fermi.gbm.poshist import GbmPosHist
+from gdt.missions.fermi.gbm.finders import TriggerFtp, ContinuousFtp
+from gdt.missions.fermi.gbm.tte import GbmTte
+from gdt.missions.fermi.gbm.trigdat import Trigdat
+from gdt.missions.fermi.time import Time
+import glob
 
-tte_files = ['<path to gts>/data/GBM/glg_tte_n0_bn160408268_v00.fit',
-'<path to gts>/data/GBM/glg_tte_n1_bn160408268_v00.fit',
-'<path to gts>/data/GBM/glg_tte_n2_bn160408268_v00.fit',
-'<path to gts>/data/GBM/glg_tte_n3_bn160408268_v00.fit',
-'<path to gts>/data/GBM/glg_tte_n4_bn160408268_v00.fit',
-'<path to gts>/data/GBM/glg_tte_n5_bn160408268_v00.fit',
-'<path to gts>/data/GBM/glg_tte_n6_bn160408268_v00.fit',
-'<path to gts>/data/GBM/glg_tte_n7_bn160408268_v00.fit',
-'<path to gts>/data/GBM/glg_tte_n8_bn160408268_v00.fit',
-'<path to gts>/data/GBM/glg_tte_n9_bn160408268_v00.fit',
-'<path to gts>/data/GBM/glg_tte_na_bn160408268_v00.fit',
-'<path to gts>/data/GBM/glg_tte_nb_bn160408268_v00.fit']
+# Get the tte data
+bn = '160408268'
+ftp = TriggerFtp(bn)
+ftp.get_tte("data/gbm", dets=['n0', 'n1', 'n2', 'n3', 'n4', 'n5', 'n6', 'n7', 'n8', 'n9', 'na', 'nb'])
+tte_files = sorted(glob.glob(f'data/gbm/glg_tte_n?_bn{bn}_v??.fit'))
+
+# Get the trigdat file too since it contains spacecraft position history for this burst
+ftp.get_trigdat('data/gbm')
+trigdat_file = glob.glob(f'data/gbm/glg_trigdat_all_bn{bn}_v??.fit')[-1]
 
 # Load the tte data into memory
 tte_data = []
@@ -68,20 +70,17 @@ for tte_file in tte_files:
     tte = GbmTte.open(tte_file)
     tte_data.append(tte)
 
-# format the trigger time as a Time object
-trigtime = Time(pha2_data[0].trigtime, format='fermi')
-
-# Convert the tte data to binned phaii data
-channel_edges=[0, 8, 20, 33, 51, 85, 106, 127, 128]
+# Bin the tte data
+channel_edges = [8, 20, 33, 51, 85, 106, 127]
 pha2_data = gts.preparePha2Data(tte_data, channel_edges)
 
-# Get the response
-response = gts.loadResponse('<path to gts>/templates/GBM/direct/nai.npy', templates=[0, 1, 2], channels=[1, 2, 3, 4, 5, 6])
+# Load the detector responses
+response = gts.loadResponse('templates/GBM/direct/nai.npy', templates=[0, 1, 2], channels=[1, 2, 3, 4, 5, 6])
 
-# Get the spacecraft frame
-
-poshist = GbmPosHist.open('<path to gts>/data/GBM/glg_poshist_all_160408_v01.fit')
-spacecraft_frames = poshist.get_spacecraft_frame()
+# Get trigger time and spacecraft frames
+trigdat = Trigdat.open(trigdat_file)
+spacecraft_frames = trigdat.poshist
+trigtime = Time(pha2_data[0].trigtime, format='fermi')
 
 # Run the search
 search = gts.runSearch(pha2_data, response, spacecraft_frames, trigtime, background_range=[-30, 30])
