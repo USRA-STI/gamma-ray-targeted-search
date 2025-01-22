@@ -84,8 +84,7 @@ class Data():
         sub_dir = trigger_id if triggered else "%.3f" % trigger_id.fermi
         path = f"{data_directory}/{sub_dir}"
 
-        #tte_wildcard = f"{path}/*tte*.fit*"
-        tte_wildcard = f"{path}/*tte_n*.fit*" 
+        tte_wildcard = f"{path}/*tte*.fit*"
         poshist_wildcard = f"{path}/glg_poshist_all_*.fit"
         
         # check for files
