@@ -25,7 +25,6 @@
 # License.
 #
 import os
-import glob
 import numpy as np
 import argparse
 import datetime
@@ -37,71 +36,17 @@ import gts
 import utils
 import plots
 
+from data import Data
 from skymap import O3_DGAUSS_Model, LigoHealPix
 
 from gdt.core.plot.sky import EquatorialPlot
 from gdt.missions.fermi.time import Time
 from gdt.missions.fermi.gbm.saa import GbmSaa
-from gdt.missions.fermi.gbm.tte import GbmTte
 from gdt.missions.fermi.gbm.poshist import GbmPosHist
-from gdt.missions.fermi.gbm.finders import TriggerFtp, ContinuousFtp
 from gdt.missions.fermi.gbm.localization import GbmHealPix
 
 basedir = os.path.dirname(os.path.abspath(__file__))
-
-def getData(trigger_id, data_directory):
-    """ Method for downloading data needed by the targeted search
-
-    Args:
-        trigger_id (str, :class:`Time`): GBM trigger ID string (burst number) for analyzing triggered data OR
-                                         a Time() object for analyzing continuous data
-        data_directory (str): Directory for downloaded data. Data will appear in a subfolder formatted as
-                              'data/trigger_id' for triggered data and 'data/#########.###' for continuous data.
-
-    Returns:
-        (Time, [str, str, ...], str): tuple with Time() formatted trigger time, 
-                                      list of TTE file paths, and position history path
-    """
-    # boolean for specifying requested data type (triggered or continuous)
-    triggered = isinstance(trigger_id, str)
-
-    # format file paths
-    sub_dir = trigger_id if triggered else "%.3f" % trigger_id.fermi
-    path = f"{data_directory}/{sub_dir}"
-    tte_wildcard = f"{path}/*tte_n?_*.fit*"
-    poshist_wildcard = f"{path}/glg_poshist_all_*.fit"
-    
-    # check for files
-    tte_files = sorted(glob.glob(tte_wildcard))
-    poshist_files = sorted(glob.glob(poshist_wildcard))
-
-    # ensure we have 12 nai TTE files. We'll add BGO in the future.
-    if len(tte_files) < 12:
-        ftp = TriggerFtp(trigger_id) if triggered else ContinuousFtp(trigger_id)
-        ftp.get_tte(path)
-        tte_files = sorted(glob.glob(tte_wildcard))
-
-    # get trigtime from first triggered TTE file when using triggered files
-    if triggered:
-        trigtime = Time(GbmTte.open(tte_files[0]).headers[0]['TRIGTIME'], format='fermi')
-    else:
-        trigtime = trigger_id # trigger_id is already a Time() object for continuous case
-
-    # ensure we have a position history file
-    if not len(poshist_files):
-        if triggered:
-            # need to update ftp object because poshist are from continuous file set
-            ftp = ContinuousFtp(trigtime)
-        ftp.get_poshist(path)
-        poshist_files = sorted(glob.glob(poshist_wildcard))
-            
-    if len(tte_files) != 12 or not len(poshist_files):
-        raise ValueError("Could not download or locate files. Check ")
-
-    # only return first poshist for now.
-    # Need to work on crossover at day boundary.
-    return trigtime, tte_files, poshist_files[0]
-    
+       
 def main():
 
     parser = argparse.ArgumentParser("gbm_targeted_search.py", "Script for performing the full GBM targeted search")
@@ -142,23 +87,18 @@ def main():
         else:
             value = float(args.time)
         trigger = Time(value, format=args.format)
-
-    # get trigtime and files for the search
-    trigtime, tte_files, poshist_file = getData(trigger, "data/gbm")
-
-    # Load the tte data into memory
-    print("opening TTE")
-    tte_data = []
-    for tte_file in tte_files:
-        tte = GbmTte.open(tte_file)
-        tte_data.append(tte)
-
-    print("re-binning TTE for search")
-    # Convert the tte data to binned phaii data using a time range of at least +/-30 seconds
-    time_range = np.array([-1, 1]) * max([0.5 * args.search_window_width + args.max_dur + 1.024, 30])
-    channel_edges = [8, 20, 33, 51, 85, 106, 127]
-    pha2_data = gts.preparePha2Data(tte_data, channel_edges, t0=trigtime.fermi, time_range=time_range)
-
+    
+    # create instance of data class and bin data
+    data = Data(trigger, data_directory='data/gbm', 
+                search_window_width=args.search_window_width, 
+                max_dur=args.max_dur, resolution=0.064)
+    data.bin()
+    
+    # save data products to local variables
+    trigtime = data.trigtime
+    time_range = data.time_range
+    poshist_file = data.poshist_file
+    
     print("opening poshist")
     # Get the spacecraft frame
     poshist = GbmPosHist.open(poshist_file)
@@ -188,7 +128,7 @@ def main():
         'min_dur': args.min_dur, 'max_dur': args.max_dur,
         'min_step': args.min_step,'num_steps': args.num_steps,
     }
-    search = gts.runSearch(pha2_data, response, spacecraft_frames, t0=trigtime,
+    search = gts.runSearch(data, response, spacecraft_frames, t0=trigtime,
                            background_range=time_range, skymap=args.skymap, settings=settings,
                            results_dir=args.results_dir)
 
@@ -220,7 +160,7 @@ def main():
     print('Done.')
 
     print('\nLight curve plots...')
-    lcplotter = plots.TargetedLightcurves(search['data'], search['background'], trigtime)
+    lcplotter = plots.TargetedLightcurves(search['pha2_data'], search['background'], trigtime)
     lc_detectors_filename = os.path.join(args.results_dir, 'Event{}_lightcurve_detectors.png')
     lc_summed_filename = os.path.join(args.results_dir, 'Event{}_lightcurve_summed.png')
     lc_channel_filename = os.path.join(args.results_dir, 'Event{}_lightcurve_channels.png')

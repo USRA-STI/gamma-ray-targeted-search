@@ -43,8 +43,6 @@ from gdt.core.data_primitives import Gti
 from gdt.core.coords.quaternion import Quaternion
 from gdt.core.binning.unbinned import bin_by_time
 from gdt.core.binning.binned import rebin_by_edge_index
-from gdt.core.background.fitter import BackgroundFitter
-from gdt.core.background.binned import Polynomial
 from gdt.core.plot.lightcurve import Lightcurve
 
 from results import Results, UpperLimits
@@ -104,256 +102,6 @@ def loadResponse(rsp_file, templates=None, skyGrid=None, channels=None, detector
     response = response[:, :, :, detectors]
 
     return response
-
-def preparePha2Data(tte_data, channel_edges, time_range=[-30, 30], t0=None, resolution=0.064):
-    """ Function for preparing binned phaii data from time tagged events
-
-    Args:
-        tte_data (list): list of opened Tte data objects from a mission
-        channel_edges (list): list of energy channel edges to use when binning data by energy index
-        time_range (list): start and stop time used to select data around t0
-        t0 (float or Time class): trigger time to use. Use trigtime of the Tte file when None.
-        resolution (float): time resolution used when binning the Tte data in time.
-                            This will set the minimum searchable duration of the search.
-
-    Returns:
-        list: list of PHAII data objects which represent instrument counts binned in energy as a function of time
-    """
-    # Create a list to contain the phaii product for each detector
-    pha2_data = []
-
-    # Make sure the channel edges is a numpy array
-    channel_edges = np.array(channel_edges)
-
-    # Loop through each TTE file and create a phaii file with the supplied channel edges
-    for tte in tte_data:
-
-        trigtime = tte.trigtime
-
-        if trigtime is None and t0 is None:
-            raise ValueError("t0 time is required when using continuous TTE files")
-        if t0 is not None:
-            # calculate offset to new trigger time
-            offset = t0 if trigtime is None else t0 - trigtime
-            # apply offset to event times
-            tte.data._events['TIME'] -= offset
-            # apply offset to good time interval bounds
-            gti_start, gti_stop = np.transpose(tte.gti.as_list()) - offset
-            tte._gti = Gti.from_bounds(gti_start, gti_stop)
-            # update trigtime here but set it after rebin_energy to
-            # avoid header mismatch in continuous tte files
-            trigtime = t0
-
-        # Bin the TTE data by time and energy
-        phaii = tte.to_phaii(bin_by_time, resolution, time_ref=0, time_range=time_range)
-        phaii = phaii.rebin_energy(rebin_by_edge_index, channel_edges)
-        phaii._trigtime = trigtime
-
-        pha2_data.append(phaii)
-
-    return pha2_data
-
-def fitBackgrounds(pha2_data, time_range=(-30, 30), verbose=True, plot=False):
-    """ Method for performing a first order polynomial background fit
-
-    Args:
-        pha2_data (list): PHAII data objects for each detector
-        time_range (tuple): tuple with start and stop time of the fit region
-        verbose (bool): show fit statistic when True
-        plot (bool): display a plot of the fit when True
-
-    Returns:
-        list: list of background rates objects returned from the fit
-    """
-    if verbose == True:
-        print('\nFitting backgrounds...')
-        print('Background fit selection: %s sec to %s sec' % (time_range[0], time_range[1]))
-        print('\nStat/DOF:')
-
-        print('--------------------------- Channels ---------------------------')
-
-    # Create a list to contain the background rates for each detector
-    background_rates = []
-
-    for phaii in pha2_data:
-
-        # Fit the data
-        fitter = BackgroundFitter.from_phaii(phaii, Polynomial, time_ranges=[time_range])
-        fitter.fit(order=1)
-
-        if verbose == True:
-            # Round the elements of the array
-            goodness_of_fit = np.round(fitter.statistic/fitter.dof, 2)
-
-            # Print the elements in a table format with consistent column spacing
-            col_width = 7  # Adjust as needed for wider numbers
-            formatted_strings = [f"{value:>{col_width}.2f}" for value in goodness_of_fit]
-            print(" ".join(formatted_strings))
-
-        # Get the closest time edge to the search window
-        tstart_closest = phaii.data.closest_time_edge(time_range[0], which='low')
-        tstop_closest = phaii.data.closest_time_edge(time_range[1], which='high')
-
-        # Get the index of the closest values and pad that index by an additional bin
-        index_start = np.abs(phaii.data.tstart - tstart_closest).argmin()
-        index_stop = np.abs(phaii.data.tstop - tstop_closest).argmin()
-
-        # Interpolate the fit over the search range
-        tstarts = phaii.data.tstart[index_start:index_stop]
-        tstops = phaii.data.tstop[index_start:index_stop]
-        back_rates = fitter.interpolate_bins(tstarts, tstops)        
-
-        # Save the background object
-        background_rates.append(back_rates)
-
-        # Plot the fit
-        if plot == True:
-            lightcurve = phaii.to_lightcurve()
-            lcplot = Lightcurve(data=lightcurve)
-            lcplot.set_background(back_rates)
-            plt.xlim(*time_range)
-            plt.show()
-
-    background_rates = np.array(background_rates)
-
-    return background_rates
-
-def getBackgrounds(background_rates, timebin, channels=None):
-    """ Retrieve background counts computed over a specific time bin
-
-    Args:
-        background_rates (list): list of background rates objects for each detector
-        timebin (tuple): tuple with (bin start time, bin duration)
-        channels (list): list of channel indices to use when selecting a subset of detectors
-
-    Returns:
-        (np.ndarray, np.ndarray): tuple with arrays of background counts and their uncertainties for each detector
-    """
-    tstart = timebin[0]
-    duration = timebin[1]
-    tstop = tstart + duration
-    time_range = np.array([tstart, tstart + duration])
-
-    # Determine the number of detectors
-    n_detectors = len(background_rates)
-
-    # Determine the number of channels 
-    if channels is None:
-        n_channels = len(background_rates[0].chan_widths)
-
-    # Create an array to contain the background data
-    backgrounds = np.zeros((n_channels, n_detectors))
-    background_uncertainties = np.zeros((n_channels, n_detectors))
-
-    for index in range(len(background_rates)):
-
-        # Produce an background object that is integrated over the entire time slice
-        background_rate = background_rates[index]
-        background_rate_integrated = background_rate.integrate_time(tstart=tstart, tstop=tstop)
-
-        # Eztract arrays of background counts and background counts uncertainty per channel
-        background = background_rate_integrated.counts
-        background_uncertainty = background_rate_integrated.count_uncertainty
-
-        if isinstance(background_rate.count_uncertainty[0], np.float64):
-            background_uncertainty = background_uncertainty.reshape(-1,1)
-
-        # Fill the background and background uncertainy arrays
-        backgrounds[:,index] = background[channels]
-        background_uncertainties[:,index] = background_uncertainty[channels]
-
-    return backgrounds, background_uncertainties
-
-def getCounts(pha2_data, timebin, channels=None):
-    """ Retrieve observed counts computed over a specific time bin
-
-    Args:
-        pha2_data (list): list of PHAII data objects for each detector
-        timebin (tuple): tuple with (bin start time, bin duration)
-        channels (list): list of channel indices to use when selecting a subset of detectors
-
-    Returns:
-        np.ndarray: array of counts for each detector
-    """
-
-    # Get the time bin information
-    tstart = timebin[0]
-    duration = timebin[1]
-    tstop = tstart + duration
-    time_range = np.array([tstart, tstop])
-
-    # Determine the number of detectors and channels
-    n_detectors = len(pha2_data)
-
-    if channels is None:
-        n_channels = len(pha2_data[0].data.chan_widths)
-
-    # Create an array to contain the count data
-    counts = np.zeros((n_channels, n_detectors))
-
-    # Loop through each pha2 file and extract and record the number of counts in the time bin
-    for index in range(len(pha2_data)):
-
-        # Integrate the phaii data over time to produce a count spectrum
-        phaii = pha2_data[index]
-        channel_counts = phaii.to_spectrum(time_range=time_range).counts
-
-        # Fill the counts array
-        counts[:,index] = channel_counts[channels]
-
-    return counts
-    
-def getTimeBins(pha2_data, settings):
-    """ Calculate the time bins used in the search. These represent the different
-    emission durations of the search shifted across the full search range using
-    a given step size.
-
-    Args:
-        pha2_data (list): PHAII data objects for each detector
-        settings (dict): search settings for duration range, search range, and step size
-
-    Returns:
-        list: list with values for the start times and durations of each search bin
-    """
-    win_width = settings['win_width']
-    min_dur = settings['min_dur']
-    max_dur = settings['max_dur']
-    min_step = settings['min_step']
-    num_steps = settings['num_steps']
-
-    search_range = (-win_width/2.0, win_width/2.0)
-
-    # Durations to search in powers of two
-    log2maxdur = np.round(np.log2(max_dur))
-    log2mindur = np.round(np.log2(min_dur))
-    durations = 1.024 * 2. ** np.arange(log2mindur, log2maxdur + 1, 1)
-
-    # Get one of the phaii files to determine the proper data binning
-    phaii = pha2_data[0]
-
-    # The search bins before 0
-    tstart1 = phaii.data.slice_time(search_range[0] - durations.max()/2.0, 0).tstart
-    timebins1 = []
-    if len(tstart1):
-        timebins1 = ((t, dur) for dur in durations \
-                     for t in np.arange(0, tstart1[0], \
-                                        -max(min_step, dur/num_steps)) \
-                     if t >= search_range[0]-dur/2.0)     
-
-    # The search bins after 0, inclusive
-    tstart2 = phaii.data.slice_time(0, search_range[1]).tstart
-    timebins2 = []
-    if len(tstart2):
-        timebins2 = ((t, dur) for dur in durations 
-                     for t in np.arange(0, tstart2[-1], \
-                                        max(min_step, dur/num_steps)) \
-                     if t+dur/2.0 <= search_range[-1])        
-
-    # Combine the search windows. Format: (tstart, duration)
-    timebins = sorted(timebins1)
-    timebins.extend(sorted(timebins2))
-
-    return timebins
 
 def smallSkyMapCorrection(skymap, skyResolution):
     """ Correction technique used for cases where the resolution of the
@@ -552,24 +300,6 @@ def findLocationOfMaxLikelihood(skyGrid, like, spacecraft_frame):
     # return ra_max, dec_max
     return coordinate_max
 
-def formatDataForSearch(counts, background, background_error):
-    """ Formats the data as 1D vectors for the likelihood method
-
-    Args:
-        counts (np.ndarray): observed counts for all detectors and energy bins
-        background (np.ndarray): background counts for all detectors and energy bins
-        background_error (np.ndarray): error on background counts for all detectors and energy bins
-
-    Returns:
-        (counts, background, background_error): the input arrays formatted as 1D vectors
-    """
-    # Flatten the arrays
-    counts = counts.ravel()
-    background = background.ravel()
-    background_error = background_error.ravel()
-
-    return counts, background, background_error
-
 def saveUpperLimits(pflux_weighted, results, upperlimit_map_pflux, upperlimit_sigma, upperlimit_durations, template_names, resultsDirectory="./"):
     """ Method for saving upper limit values to a file. Currently unused. Need to separate prior-averaged from per-location upper limits.
 
@@ -666,12 +396,12 @@ def createLocalization(tcenter, duration, template, search, cls, systematic, rem
 
     return loc
 
-def runSearch(pha2_data, response, spacecraft_frames, t0, background_range, skyResolution=5, skymap=None, \
+def runSearch(data, response, spacecraft_frames, t0, background_range, skyResolution=5, skymap=None, \
               settings=None, templates=None, templates_names=None, results_dir=None):
     """ Runs the targeted search near a trigger time of t0
 
     Args:
-        pha2_data (list): PHAII data objects for each detector
+        data (Data): data object for all detectors
         reponse (np.ndarray): instrument response matrix for all detectors
         spacecraft_frames (list?): objext with spacecraft frames for interpolation
         t0 (Time): trigger time of the search
@@ -733,9 +463,10 @@ def runSearch(pha2_data, response, spacecraft_frames, t0, background_range, skyR
 
     # Define the time range over which the background is fit and the plots are made
     search_range = np.array([-0.5, 0.5]) * settings['win_width']
-
+    
     # Generate the timebins to search
-    timebins = getTimeBins(pha2_data, settings)   # Format: (tstart, duration
+    timebins = data.getTimeBins(settings)
+    
     n_timebins = len(timebins)
 
     # Get the number of spectral templates
@@ -750,9 +481,6 @@ def runSearch(pha2_data, response, spacecraft_frames, t0, background_range, skyR
 
     # Initilize a results array
     results = np.zeros((n_timebins, 23))
-
-    # Fit the backgrounds and return the background objects for each detector
-    background_rates = fitBackgrounds(pha2_data, time_range=background_range)
 
     # Determine if the supplied skymap covers a very small region of the sky
     if skymap is not None:
@@ -778,21 +506,9 @@ def runSearch(pha2_data, response, spacecraft_frames, t0, background_range, skyR
     for index in range(n_timebins):
 
         # Get the center of the timebin and the bin duration
-        timebin = timebins[index]
-        tstart = timebin[0]
-        duration = timebin[1]
-        tcenter = tstart + duration / 2.0
-
-        # Extract the counts and background data from the phaii data for this specific timebin
-        counts = getCounts(pha2_data, timebin)
-        background, background_error = getBackgrounds(background_rates, timebin)
-
-        # Calculate the signal to noise ratio (SNR)
-        snr = calculateSnr(counts, background)
-
-        # Calculate the phosphorescence veto
-        pe_veto = phosphorescenceVeto(counts, background, background_error)
-
+        tcenter = data.tcenters[index]
+        durations = data.durations[index]
+        
         # Get the spacecraft frame that is closest to this timebin
         spacecraft_frame = spacecraft_frames.at(t0 + tcenter * u.second)
 
@@ -802,7 +518,7 @@ def runSearch(pha2_data, response, spacecraft_frames, t0, background_range, skyR
         masked_rsp = rsp[:,earthmask,:]
 
         # Format the data to optimize the search
-        counts, background, background_error = formatDataForSearch(counts, background, background_error)
+        counts, background, background_error = data.formatDataForSearch(index)
 
         # Initilize the likelihood object and perform the calculation
         like = Likelihood(n_templates, skyGrid.size)
@@ -895,5 +611,5 @@ def runSearch(pha2_data, response, spacecraft_frames, t0, background_range, skyR
 
     # Return the results object as well as other information from the search
     return {'results': Results.create(results, templates=templates), 't0': t0, 'skymap': skymap,
-            'skygrid': skyGrid, 'response': rsp, 'data': pha2_data, 'background': background_rates,
+            'skygrid': skyGrid, 'response': rsp, 'pha2_data': pha2_data, 'background': background_rates,
             'spacecraft_frames': spacecraft_frames}
