@@ -88,11 +88,12 @@ def main():
             value = float(args.time)
         trigger = Time(value, format=args.format)
     
-    # create instance of data class and bin data
+    # create instance of data class
     data = Data(trigger, data_directory='data/gbm', 
                 search_window_width=args.search_window_width, 
                 max_dur=args.max_dur, resolution=0.064)
-    data.bin()
+    # bin data
+    pha2_data = data.bin()
     
     # save data products to local variables
     trigtime = data.trigtime
@@ -160,7 +161,7 @@ def main():
     print('Done.')
 
     print('\nLight curve plots...')
-    lcplotter = plots.TargetedLightcurves(search['pha2_data'], search['background'], trigtime)
+    lcplotter = plots.TargetedLightcurves(search['data'], search['background'], trigtime)
     lc_detectors_filename = os.path.join(args.results_dir, 'Event{}_lightcurve_detectors.png')
     lc_summed_filename = os.path.join(args.results_dir, 'Event{}_lightcurve_summed.png')
     lc_channel_filename = os.path.join(args.results_dir, 'Event{}_lightcurve_channels.png')
