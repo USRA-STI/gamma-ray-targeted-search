@@ -716,6 +716,9 @@ def runSearch(data, response, spacecraft_frames, t0, background_range, skyResolu
 
         # Format the data to optimize the search
         counts, background, background_error = formatDataForSearch(counts, background, background_error)
+
+        # Get exposure of the selected detectors over the timebin
+        exposure = data.getExposure(timebin)
         
         # Initilize the likelihood object and perform the calculation
         like = Likelihood(n_templates, skyGrid.size)

@@ -91,7 +91,9 @@ def main():
     # create instance of data class
     data = Data(trigger, data_directory='data/gbm', 
                 search_window_width=args.search_window_width, 
-                max_dur=args.max_dur, resolution=0.064)
+                max_dur=args.max_dur, resolution=0.064, 
+                nai_only=True)
+
     # bin data
     pha2_data = data.bin()
     

@@ -10,36 +10,6 @@ from gdt.missions.fermi.time import Time
 from gdt.missions.fermi.gbm.tte import GbmTte
 from gdt.missions.fermi.gbm.finders import TriggerFtp, ContinuousFtp
 
-class Detectors():
-
-    def __init__():
-
-        self.detectors = {
-            
-            'nai': 
-            {
-                'number': 12,
-                'wildcard': 'glg_tte_n??_bn??.fit'
-            },
-            
-            'bgo':
-            {
-                'number': 2,
-                'wildcard': 'glg_tte_b??_bn??.fit'
-            }
-        }
-
-    def set_mask(data_directory, files):
-
-        for detector in self.detectors:
-
-            # create mask
-            detector_files = sorted(glob.glob(f'{data_directory}+/{self.detectors[detector]["wildcard"]}'))
-            detector_mask = [True if file in detector_files else False for file in files]
-            
-            # save mask
-            self.detectors[key]['mask'] = detector_mask
-
 class Data():
     
     '''
@@ -48,7 +18,7 @@ class Data():
     '''
 
     def __init__(self, trigger, data_directory='data/gbm', search_window_width=60, 
-                 max_dur=8.192, resolution=0.064):
+                 max_dur=8.192, resolution=0.064, nai_only=True):
 
         self.trigger = trigger
         self.data_directory = data_directory
@@ -58,7 +28,16 @@ class Data():
         # set detectors channels
         self.channels = [0,1,2,3,4,5,6,7]
         self.channels_edges = [8, 20, 33, 51, 85, 106, 127]
+        self.nai_only = nai_only
 
+        # specify number of detectors and corresponding wildcard
+        if nai_only == True:
+            self.n_detectors = 12
+            self.wildcard = 'glg_tte_n*.fit*'
+        else:
+            self.n_detectors = 14
+            self.wildcard = 'glg_tte_*.fit*'
+            
     def get(self):
         
         """ Method for downloading data needed by the targeted search
@@ -84,7 +63,7 @@ class Data():
         sub_dir = trigger_id if triggered else "%.3f" % trigger_id.fermi
         path = f"{data_directory}/{sub_dir}"
 
-        tte_wildcard = f"{path}/*tte*.fit*"
+        tte_wildcard = f"{path}/{self.wildcard}"
         poshist_wildcard = f"{path}/glg_poshist_all_*.fit"
         
         # check for files
@@ -92,7 +71,7 @@ class Data():
         poshist_files = sorted(glob.glob(poshist_wildcard))
     
         # ensure we have 14 nai TTE files (12 NaIs and 2 BGOs). 
-        if len(tte_files) < 14:
+        if len(tte_files) < self.n_detectors:
             ftp = TriggerFtp(trigger_id) if triggered else ContinuousFtp(trigger_id)
             ftp.get_tte(path)
             tte_files = sorted(glob.glob(tte_wildcard))
@@ -111,7 +90,7 @@ class Data():
             ftp.get_poshist(path)
             poshist_files = sorted(glob.glob(poshist_wildcard))
                 
-        if len(tte_files) != 14 or not len(poshist_files):
+        if len(tte_files) != self.n_detectors or not len(poshist_files):
             raise ValueError("Could not download or locate files. Check ")
        
         # only return first poshist for now.
@@ -130,24 +109,16 @@ class Data():
             self.tte_data.append(tte)
         
     def bin(self):
-        
-        print("re-binning TTE for search")
-        # Convert the tte data to binned phaii data using a time range of at least +/-30 seconds
-        self.time_range = np.array([-1, 1]) * max([0.5 * self.search_window_width + self.max_dur + 1.024, 30])      
-        
+                
         """ Function for preparing binned phaii data from time tagged events
-    
-        Args:
-            tte_data (list): list of opened Tte data objects from a mission
-            channel_edges (list): list of energy channel edges to use when binning data by energy index
-            time_range (list): start and stop time used to select data around t0
-            t0 (float or Time class): trigger time to use. Use trigtime of the Tte file when None.
-            resolution (float): time resolution used when binning the Tte data in time.
-                                This will set the minimum searchable duration of the search.
     
         Returns:
             list: list of PHAII data objects which represent instrument counts binned in energy as a function of time
         """
+
+        print("re-binning TTE for search")
+        # Convert the tte data to binned phaii data using a time range of at least +/-30 seconds
+        self.time_range = np.array([-1, 1]) * max([0.5 * self.search_window_width + self.max_dur + 1.024, 30])      
 
         # Download data and load them in memory
         self.get()
@@ -193,6 +164,7 @@ class Data():
         return pha2_data
 
     def getCounts(self, timebin, channels=None):
+        
         """ Retrieve observed counts computed over a specific time bin
     
         Args:
@@ -233,3 +205,46 @@ class Data():
             counts[index, :] = channel_counts[channels]
     
         return counts
+
+    def getExposure(self, timebin, channels=None):
+        
+        """ Retrieve the exposure of the selected detectors in a specific time bin
+
+        Args:
+            timebin (tuple): tuple with (bin start time, bin duration)
+            channels (list): list of channel indices to use
+    
+        Returns:
+            np.ndarray: array of exposure for each detector
+        """
+
+        # Get the time bin information
+        tstart = timebin[0]
+        duration = timebin[1]
+        
+        tstop = tstart + duration
+        time_range = np.array([tstart, tstop])
+
+        # get pha2 data
+        pha2_data = self.pha2_data
+
+        # Determine the number of detectors and channels
+        n_detectors = len(pha2_data)
+    
+        if channels is None:
+            n_channels = len(pha2_data[0].data.chan_widths)
+    
+        # Create an array to contain the exposure of the selected detectors
+        exposure = np.zeros((n_detectors, n_channels))
+    
+        # Loop through each pha2 file and extract and record the exposure in the time bin
+        for index in range(len(pha2_data)):
+    
+            # Integrate the phaii data over time to produce a count spectrum
+            phaii = pha2_data[index]
+            channels_exposure = phaii.to_spectrum(time_range=time_range, channel_range=channels).exposure
+    
+            # Append value to exposure array
+            exposure[index, :] = channels_exposure
+
+        return exposure
