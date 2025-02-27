@@ -25,6 +25,8 @@
 # License.
 #
 import os
+import sys
+import glob
 import numpy as np
 import argparse
 import datetime
@@ -33,20 +35,79 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 import gts
+import time
 import utils
 import plots
 
-from data import Data
+from data import PhaiiMatrix
 from skymap import O3_DGAUSS_Model, LigoHealPix
 
 from gdt.core.plot.sky import EquatorialPlot
 from gdt.missions.fermi.time import Time
 from gdt.missions.fermi.gbm.saa import GbmSaa
+from gdt.missions.fermi.gbm.tte import GbmTte
 from gdt.missions.fermi.gbm.poshist import GbmPosHist
+from gdt.missions.fermi.gbm.detectors import GbmDetectors
 from gdt.missions.fermi.gbm.localization import GbmHealPix
+from gdt.missions.fermi.gbm.finders import ContinuousFinder, TriggerFinder
 
 basedir = os.path.dirname(os.path.abspath(__file__))
-       
+
+def getData(trigger_id, settings, data_directory):
+    """ Method for downloading data needed by the targeted search
+
+    Args:
+        trigger_id (str, :class:`Time`): GBM trigger ID string (burst number) for analyzing triggered data OR
+                                         a Time() object for analyzing continuous data
+        data_directory (str): Directory for downloaded data. Data will appear in a subfolder formatted as
+                              'data/trigger_id' for triggered data and 'data/#########.###' for continuous data.
+
+    Returns:
+        (Time, [str, str, ...], str): tuple with Time() formatted trigger time, 
+                                      list of TTE file paths, and position history path
+    """
+    detectors = list(settings['detectors'].keys())
+
+    # boolean for specifying requested data type (triggered or continuous)
+    triggered = isinstance(trigger_id, str)
+
+    # format file paths
+    sub_dir = trigger_id if triggered else "%.3f" % trigger_id.fermi
+    path = f"{data_directory}/{sub_dir}"
+    tte_wildcard = f"{path}/*tte_??_*.fit*"
+    poshist_wildcard = f"{path}/glg_poshist_all_*.fit"
+    
+    # check for files
+    tte_files = []
+    for det in detectors:
+        tte_files.extend(glob.glob(tte_wildcard.replace("??", det)))
+    poshist_files = sorted(glob.glob(poshist_wildcard))
+
+    if len(tte_files) < len(detectors):
+        ftp = TriggerFinder(trigger_id) if triggered else ContinuousFinder(trigger_id)
+        tte_files = ftp.get_tte(path, dets=detectors)
+
+    # get trigtime from first triggered TTE file when using triggered files
+    if triggered:
+        trigtime = Time(GbmTte.open(tte_files[0]).headers[0]['TRIGTIME'], format='fermi')
+    else:
+        trigtime = trigger_id # trigger_id is already a Time() object for continuous case
+
+    # ensure we have a position history file
+    if not len(poshist_files):
+        if triggered:
+            # need to update ftp object because poshist are from continuous file set
+            ftp = ContinuousFtp(trigtime)
+        ftp.get_poshist(path)
+        poshist_files = sorted(glob.glob(poshist_wildcard))
+            
+    if len(tte_files) != len(detectors) or not len(poshist_files):
+        raise ValueError("Could not download or locate files. Check ")
+
+    # only return first poshist for now.
+    # Need to work on crossover at day boundary.
+    return trigtime, tte_files, poshist_files[0]
+
 def main():
 
     parser = argparse.ArgumentParser("gbm_targeted_search.py", "Script for performing the full GBM targeted search")
@@ -87,12 +148,37 @@ def main():
         else:
             value = float(args.time)
         trigger = Time(value, format=args.format)
-    
-    # create instance of data class
-    data = Data(trigger, data_directory='data/gbm', 
-                search_window_width=args.search_window_width, 
-                max_dur=args.max_dur, resolution=0.064, 
-                nai_only=True)
+
+    settings = {
+        'win_width': args.search_window_width,
+        'min_loglr': 5,
+        'min_dur': args.min_dur, 'max_dur': args.max_dur,
+        'min_step': args.min_step,'num_steps': args.num_steps,
+        'detectors':
+             {det.name: {'channel_edges': [0, 8, 20, 33, 51, 85, 106, 127, 128], 'search_channels': [1, 2, 3, 4, 5, 6]} for det in GbmDetectors.nai()} |
+             {det.name: {'channel_edges': [0, 8, 21, 40, 65, 90, 112, 124, 128], 'search_channels': [0, 1, 2, 3, 4, 5, 6, 7]} for det in GbmDetectors.bgo()},
+    }
+
+    trigtime, tte_files, poshist_file = getData(trigger, settings, "data/gbm")
+
+    # Load the tte data into memory
+    print("opening TTE")
+    tte_data = []
+    for tte_file in tte_files:
+        tte = GbmTte.open(tte_file)
+        tte_data.append(tte)
+
+    print("re-binning TTE for search")
+    # Convert the tte data to binned phaii data using a time range of at least +/-30 seconds
+    time_range = np.array([-1, 1]) * max([0.5 * args.search_window_width + args.max_dur + 1.024, 30])
+    data = PhaiiMatrix(tte_data, settings, t0=trigtime.fermi, resolution=settings["min_step"])
+    counts, exposure = data.counts(0, 1.024)
+    print("flat counts", counts)
+    print("flat exposure", exposure)
+
+    from background import BackgroundMatrix, binned_polynomial
+    background = BackgroundMatrix(binned_polynomial, data.phaiis, order=1, time_range=[-30, 30]) 
+    exit(0) 
 
     # bin data
     pha2_data = data.bin()
@@ -125,12 +211,6 @@ def main():
 
     print("running the search")
     # Run the search
-    settings = {
-        'win_width': args.search_window_width,
-        'min_loglr': 5,
-        'min_dur': args.min_dur, 'max_dur': args.max_dur,
-        'min_step': args.min_step,'num_steps': args.num_steps,
-    }
     search = gts.runSearch(data, response, spacecraft_frames, t0=trigtime,
                            background_range=time_range, skymap=args.skymap, settings=settings,
                            results_dir=args.results_dir)
