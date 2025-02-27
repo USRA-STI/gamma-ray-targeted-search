@@ -36,7 +36,7 @@ import numpy as np
 import healpy as hp
 import sys
 import os
-from scipy.integrate import trapz
+from scipy.integrate import trapezoid
 from scipy.optimize import fmin
 
 class Results():
@@ -977,7 +977,7 @@ class UpperLimits():
             params['amp'] = 10.0**log_amp[0]
 
             # now calculate energy flux over the desired energy range
-            eflux[i] = trapz(output_energies*func(params, output_energies), 
+            eflux[i] = trapezoid(output_energies*func(params, output_energies),
                                 output_energies)*1.6e-9
         
         return eflux
@@ -1000,7 +1000,7 @@ class UpperLimits():
         """
         params['amp'] = 10.0**amp[0]
         photon_model = function(params, energies)
-        test_pflux = trapz(photon_model, energies)
+        test_pflux = trapezoid(photon_model, energies)
         return np.abs(test_pflux - pflux)        
         
     def remove_earth(self, input_map, duration, poshist, output_nside=512):
