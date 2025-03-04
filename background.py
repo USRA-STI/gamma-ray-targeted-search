@@ -19,7 +19,7 @@ class BackgroundRatesMatrix:
         self.interpolations = []
 
         for fitter in fitters:
-            self.bkgd.append(fitter.interpolate_times(self.times))
+            self.bkgd.append(fitter.interpolate_bins(self.times - 0.5 * resolution, self.times + 0.5 * resolution))
             self.good.append(np.ones(self.bkgd[-1].rates.shape))
             # interpolation methods
             self.interpolations.append([

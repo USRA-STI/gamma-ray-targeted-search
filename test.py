@@ -8,7 +8,7 @@ from gdt.missions.fermi.gbm.detectors import GbmDetectors
 from gdt.missions.fermi.gbm.tte import GbmTte
 
 from data import update_tte_trigtime, PhaiiCountMatrix
-from background import BackgroundInterpMatrix
+from background import BackgroundRatesMatrix
 
 nai_edges = np.array([0, 8, 20, 33, 51, 85, 106, 127, 128])
 bgo_edges = np.array([0, 8, 21, 40, 65, 90, 112, 124, 128])
@@ -50,21 +50,26 @@ phaiis = DataCollection.from_list(
 from gdt.core.background.fitter import BackgroundFitter
 from gdt.core.background.binned import Polynomial
 
+#bf = BackgroundFitter.from_phaii(phaiis.get_item("n0"), Polynomial, time_ranges=[bkgd_range])
+#bf.fit(order=1)
+
 # initialize the background fitters
 print("fitting background")
-bkgd_range = [(-40, 40)]
 backfitters = DataCollection.from_list(
-    [BackgroundFitter.from_phaii(phaii, Polynomial, time_ranges=bkgd_range) for phaii in phaiis],
+    [BackgroundFitter.from_phaii(phaii, Polynomial, time_ranges=[bkgd_range]) for phaii in phaiis],
     names=detectors)
 backfitters.fit(order=1)
+#[b.fit(order=1) for b in backfitters]
 
+#print(dir(backfitters.get_item("n0")))
+#exit(0)
 
 data = PhaiiCountMatrix(phaiis)
 counts, exposure = data.counts(0, 1.024)
 print("counts", counts)
 print("exposure", exposure)
 
-background = BackgroundInterpMatrix(backfitters, time_range=bkgd_range[0]) 
+background = BackgroundRatesMatrix(backfitters, time_range=bkgd_range) 
 rates, good = background.rates(0.512)
 print("rates", rates)
 print("good", good)
