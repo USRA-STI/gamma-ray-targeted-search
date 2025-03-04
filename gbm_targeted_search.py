@@ -165,7 +165,8 @@ def main():
     print("opening TTE")
     tte_data = []
     for tte_file in tte_files:
-        tte = GbmTte.open(tte_file)
+        tte = update_tte_trigtime(GbmTte.open(tte_file), t0)
+        tte = tte.rebin_energy(rebin_by_edge_index, settings['detectors'][tte.detector]['channel_edges'])
         tte_data.append(tte)
 
     print("re-binning TTE for search")

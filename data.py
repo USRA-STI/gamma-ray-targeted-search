@@ -1,53 +1,55 @@
 import numpy as np
 
-from gdt.core.data_primitives import Gti
-from gdt.core.binning.unbinned import bin_by_time
+from gdt.core.tte import PhotonList
+from gdt.core.data_primitives import EventList, Gti
 from gdt.core.binning.binned import rebin_by_edge_index
 
-class PhaiiMatrix:
-    """
-    Class interface for managing a matrix of PHAII data from multiple detectors.
+def update_tte_trigtime(tte, t0):
+    """Updates the trigtime for triggered and continuous TTE files.
+    This is needed to ensure all times are relative to the time of
+    interest, t0.
 
     Args:
-        ttes (list): List with TTE data for each detector
-        settings (dict): Settings dictionary defining detector bins
-        time_range (list | tuple): The time range to select
-        t0 (float): An external trigger time
-        resolution (float): Temporal resolution of time bins
+        tte (PhotonList): time tagged event data derived from PhotonList
+        t0 (float): the time of interest for the targeted search
+
+    Returns:
+        (PhotonList)
     """
-    def __init__(self, ttes, settings, time_range=[-30, 30], t0=None, resolution=0.064):
+    if tte.trigtime is None:
+        # continuous TTE case, offset by t0
+        offset = t0
+    else:
+        # trigger TTE case, shift data from trigtime to t0
+        offset = t0 - tte.trigtime
 
-        # create PHAII data from TTE data
-        self.phaiis = []
-        for tte in ttes:
+    # event times relative to trigtime
+    data = EventList(tte.data.times - offset,
+                     tte.data.channels, tte.data.ebounds)
 
-            trigtime = tte.trigtime
+    # good time interval bounds relative to trigtime
+    gti_start, gti_stop = np.transpose(tte.gti.as_list()) - offset
+    gti = Gti.from_bounds(gti_start, gti_stop)
 
-            if trigtime is None and t0 is None:
-                raise ValueError("t0 time is required when using continuous TTE files")
-            if t0 is not None:
-                # calculate offset to new trigger time
-                offset = t0 if trigtime is None else t0 - trigtime
-                # apply offset to event times
-                tte.data._events['TIME'] -= offset
-                # apply offset to good time interval bounds
-                gti_start, gti_stop = np.transpose(tte.gti.as_list()) - offset
-                tte._gti = Gti.from_bounds(gti_start, gti_stop)
-                # update trigtime here but set it after rebin_energy to
-                # avoid header mismatch in continuous tte files
-                trigtime = t0
+    return PhotonList.from_data(data, gti=gti, trigger_time=t0,
+                                event_deadtime=tte.event_deadtime,
+                                overflow_deadtime=tte.overflow_deadtime)
 
-            # bin the TTE data by time
-            phaii = tte.to_phaii(bin_by_time, resolution, time_ref=0, time_range=time_range)
+class PhaiiCountMatrix:
+    """
+    Class interface for retrieving the detector counts
+    matrix from a collection of PHAII data.
 
-            # re-bin PHAII energy
-            channel_edges = np.array(settings['detectors'][phaii.detector]['channel_edges'])
-            phaii = phaii.rebin_energy(rebin_by_edge_index, channel_edges)
+    Args:
+        phaiis (DataCollection): Data collection object with PHAII data for each detector
+    """
+    def __init__(self, phaiis):
 
-            # set trigtime
-            phaii._trigtime = trigtime
+        self.phaiis = phaiis
 
-            self.phaiis.append(phaii)
+    @property
+    def detectors(self):
+        return self.phaiis.items()
 
     def counts(self, tstart, tstop):
         """Retrieve observed counts and their corresponding exposure
@@ -65,5 +67,13 @@ class PhaiiMatrix:
             spec = phaii.to_spectrum(time_range=(tstart, tstop))
             counts.append(spec.counts)
             exposure.append(spec.exposure[0])
-            print(phaii.detector, "counts", counts[-1])
+
         return np.ravel(counts), np.ravel(exposure)
+
+    def write(self, filename, detectors=None):
+        """Method to write class contents to file(s)"""
+        pass
+
+    def open(self, filename, detectors=None):
+        """Method to create class from file(s)"""
+        pass
