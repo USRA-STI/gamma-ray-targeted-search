@@ -2,7 +2,7 @@
 import numpy as np
 from scipy.interpolate import interp1d
 
-class BackgroundInterpMatrix:
+class BackgroundRatesMatrix:
 
     def __init__(self, fitters, time_range, resolution=0.256):
 
