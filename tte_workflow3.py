@@ -1,7 +1,7 @@
-# This workflow demonstrates the default Fermi GBM workflow,
-# which begins with TTE data that are used directly by the search.
-# Background rates are estimated with a 125 sec long
-# sliding window.
+# This workflow demonstrates a workflow which skips the step
+# that bins data into a Phaii format. This should be used
+# by multi-mission searches to handle the correct phasing
+# of counts between different spacecraft.
 
 # NOTE: Run "Work in Progress.ipynb" before running this script
 #       to download the necessary data files.
