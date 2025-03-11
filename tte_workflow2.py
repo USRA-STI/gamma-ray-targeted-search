@@ -53,7 +53,7 @@ from gdt.missions.fermi.gbm.tte import GbmTte
 t0 = 524666469.44569993
 tte_data = []
 for det in track(detectors, description="Opening TTE files"):
-    path = f"data/gbm/524666469.429/glg_tte_{det}_170817_12z_v00.fit.gz"
+    path = f"glg_tte_{det}_170817_12z_v00.fit.gz"
     tte = update_tte_trigtime(GbmTte.open(path), t0)
     tte = tte.rebin_energy(rebin_by_edge_index, channel_edges[det])
     tte_data.append(tte)
