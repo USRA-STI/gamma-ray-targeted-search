@@ -1,6 +1,6 @@
 # This workflow demonstrates the default Fermi GBM workflow,
-# which begins with TTE data that are then binned into
-# Phaii. Background rates are estimated with a 125 sec long
+# which begins with TTE data that are used directly by the search.
+# Background rates are estimated with a 125 sec long
 # sliding window.
 
 # NOTE: Run "Work in Progress.ipynb" before running this script
@@ -60,20 +60,14 @@ for det in track(detectors, description="Opening TTE files"):
 
 ttes = DataCollection.from_list(tte_data, names=detectors)
 
-##########################
-# Step 3. Phaii Creation #
-##########################
+################################
+# Step 3. CountMatrix Creation #
+################################
 
 from data import CountMatrix
-from gdt.core.binning.unbinned import bin_by_time
 
-clock0 = unix_time.time()
-phaiis = DataCollection.from_list(
-    ttes.to_phaii(bin_by_time, phaii_resolution, time_ref=0, time_range=time_range),
-    names=detectors)
-print("\nPhaii binning took %.1f sec" % (unix_time.time() - clock0))
-
-data = CountMatrix(phaiis)
+# example showing CountMatrix creation direct from from TTE
+data = CountMatrix(ttes)
 clock0 = unix_time.time()
 counts, exposure = data.counts(1.728, 2.240)
 clock1 = unix_time.time()

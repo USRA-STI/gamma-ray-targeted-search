@@ -3,7 +3,7 @@
 # Phaii. Background rates are estimated with a first order
 # polynomial fit.
 
-# NOTE: Run "Work in Progress.ipynb" before running this scrip
+# NOTE: Run "Work in Progress.ipynb" before running this script
 #       to download the necessary data files.
 
 import time as unix_time
@@ -67,16 +67,21 @@ ttes = DataCollection.from_list(tte_data, names=detectors)
 from data import CountMatrix
 from gdt.core.binning.unbinned import bin_by_time
 
+clock0 = unix_time.time()
 phaiis = DataCollection.from_list(
     ttes.to_phaii(bin_by_time, phaii_resolution, time_ref=0, time_range=time_range),
     names=detectors)
+print("\nPhaii binning took %.1f sec" % (unix_time.time() - clock0))
 
 data = CountMatrix(phaiis)
+clock0 = unix_time.time()
 counts, exposure = data.counts(1.728, 2.240)
+clock1 = unix_time.time()
 
 print("\nData:")
 print("  counts", counts.reshape((len(detectors), 8)))
 print("  exposure", exposure)
+print("  retrieved in %.6f sec" % (clock1 - clock0))
 
 ###################################
 # Step 4. Unbinned Background Fit #
