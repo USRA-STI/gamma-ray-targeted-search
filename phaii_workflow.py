@@ -1,10 +1,7 @@
-# This workflow demonstrates the default Fermi GBM workflow,
-# which begins with TTE data that are then binned into
-# Phaii. Background rates are estimated with a first order
+# This workflow begins directly with Phaii data,
+# demonstrating how the search can be done without TTE data.
+# Background rates are estimated with a first order
 # polynomial fit.
-
-# NOTE: Run "Work in Progress.ipynb" before running this script
-#       to download the necessary data files.
 
 import time as unix_time
 
@@ -40,42 +37,37 @@ phaii_resolution = settings['min_dur']
 channel_mask = np.ravel(
     [[channel in search_channels[det] for channel in range(len(channel_edges[det]) - 1)] for det in detectors])
 
-##########################
-# Step 2. TTE Prepartion #
-##########################
+############################
+# Step 2. Open Phaii files #
+############################
 
+# start by checking if we need to download files
+import glob
+
+paths = glob.glob("glg_ctime_*_bn170817529_v00.pha")
+
+if len(paths) < len(detectors):
+    from gdt.missions.fermi.gbm.finders import TriggerFinder
+
+    finder = TriggerFinder("170817529")
+    finder.get_ctime(".")
+
+# open files
 from rich.progress import track
-from data import update_tte_trigtime
 from gdt.core.collection import DataCollection
-from gdt.core.binning.binned import rebin_by_edge_index
-from gdt.missions.fermi.gbm.tte import GbmTte
-
-t0 = 524666469.44569993
-tte_data = []
-for det in track(detectors, description="Opening TTE files"):
-    path = f"glg_tte_{det}_170817_12z_v00.fit.gz"
-    tte = update_tte_trigtime(GbmTte.open(path), t0)
-    tte = tte.rebin_energy(rebin_by_edge_index, channel_edges[det])
-    tte_data.append(tte)
-
-ttes = DataCollection.from_list(tte_data, names=detectors)
-
-##########################
-# Step 3. Phaii Creation #
-##########################
-
+from gdt.missions.fermi.gbm.phaii import GbmPhaii
 from data import CountMatrix
-from gdt.core.binning.unbinned import bin_by_time
 
-clock0 = unix_time.time()
-phaiis = DataCollection.from_list(
-    ttes.to_phaii(bin_by_time, phaii_resolution, time_ref=0, time_range=time_range),
-    names=detectors)
-print("\nPhaii binning took %.1f sec" % (unix_time.time() - clock0))
+phaii_data = []
+for det in track(detectors, description="Opening Phaii files"):
+    path = f"glg_ctime_{det}_bn170817529_v00.pha"
+    phaii_data.append(GbmPhaii.open(path))
+
+phaiis = DataCollection.from_list(phaii_data, names=detectors)
 
 data = CountMatrix(phaiis)
 clock0 = unix_time.time()
-counts, exposure = data.counts(1.728, 2.240)
+counts, exposure = data.counts(-0.256, 0.256) # relative to GRB time, not GW
 clock1 = unix_time.time()
 
 print("\nData:")
@@ -84,7 +76,7 @@ print("  exposure", exposure)
 print("  retrieved in %.6f sec" % (clock1 - clock0))
 
 #####################################
-# Step 4. Polynomial Background Fit #
+# Step 3. Polynomial Background Fit #
 #####################################
 
 from background import BackgroundRatesMatrix
@@ -101,7 +93,7 @@ backfitters.fit(order=1)
 print("\nBackground Fit took %.1f sec" % (unix_time.time() - clock0))
 
 background = BackgroundRatesMatrix(backfitters) 
-bkgd_counts, bkgd_var, good = background.counts(1.728, 2.240, exposure)
+bkgd_counts, bkgd_var, good = background.counts(-0.256, 0.256, exposure) # relative to GRB time, not GW
 
 print("\nBackground:")
 print("  counts", bkgd_counts.reshape((len(detectors), 8)))
@@ -109,7 +101,7 @@ print("  variance", bkgd_var.reshape((len(detectors), 8)))
 print("  good", good.reshape((len(detectors), 8)))
 
 ########################
-# Step 5. Sanity Check #
+# Step 4. Sanity Check #
 ########################
 
 print("\nSanity Checks:")
@@ -120,7 +112,7 @@ for i, det in enumerate(detectors):
     print("  ", det, match_det, match_ebounds)
 
 #########################
-# Step 6. Load Response #
+# Step 5. Load Response #
 #########################
 
 # Note: this section needs to be replaced by a response class
@@ -160,7 +152,7 @@ earthmask = utils.createEarthMask(skyGrid._points, geo_azimuth, geo_zenith, geo_
 masked_rsp = rsp[:,earthmask,:]
 
 ##################################
-# Step 7. Likelihood Calculation #
+# Step 6. Likelihood Calculation #
 ##################################
 
 from likelihood import Likelihood
