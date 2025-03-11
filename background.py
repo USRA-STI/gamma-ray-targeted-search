@@ -3,40 +3,55 @@ import numpy as np
 from scipy.interpolate import interp1d
 
 class BackgroundRatesMatrix:
+    """Class for retrieving the background counts matrix.
 
-    def __init__(self, fitters, time_range, resolution=0.256):
+    To-Do:
+        1. Add method to compute goodness-of-fit flags
 
-        self.detectors = fitters.items
-        self.time_range = time_range
-        self.resolution = resolution
+    Parameters:
+        fitters (DataCollection): collection of background fitters
+    """ 
+    def __init__(self, fitters):
+        """Constructor"""
+        self.fitters = fitters
 
-        self.times = 0.5 * resolution + np.arange(
-                resolution * (int(time_range[0] / resolution) - 1),
-                resolution * (int(time_range[1] / resolution) + 1), resolution)
+    @property
+    def detectors(self):
+        """(list): list of detector names"""
+        return self.fitters.items
 
-        self.good = []
-        self.bkgd = []
-        self.interpolations = []
+    @property
+    def ebounds(self):
+        """(list): list of ebounds object for each detector"""
+        # convenience method for validating energy binning against data classes
+        return [fitter._data_obj.ebounds for fitter in self.fitters]
 
-        for fitter in fitters:
-            self.bkgd.append(fitter.interpolate_bins(self.times - 0.5 * resolution, self.times + 0.5 * resolution))
-            self.good.append(np.ones(self.bkgd[-1].rates.shape))
-            # interpolation methods
-            self.interpolations.append([
-                interp1d(self.times, self.bkgd[-1].rates.transpose(), fill_value='extrapolate'),
-                interp1d(self.times, self.good[-1].transpose(), fill_value='extrapolate')])
+    def counts(self, tstart, tstop, exposure):
+        """Calculate background counts from the interpolated
+        background rate over a given window.
 
-    def rates(self, time):
-        rates, good = [], []
-        for interp in self.interpolations:
-            rates.append(interp[0](time))
-            good.append(interp[1](time))
-        return np.ravel(rates), np.ravel(good)
+        Note: user must provide exposure to ensure background counts
+        have the same exposure as the data. This is particularly
+        important when working with binned data since failing to
+        provide the exposure will result in a mismatch unless the
+        background has an indentical time binning.
 
-    def write(self, filename, detectors=None):
-        """Method to write class contents to file(s)"""
-        pass
+        Args:
+            tstart (float): start time of the counts window
+            tstop (float): stop time of the counts window
+            exposure (list): list of exposure for each detector
 
-    def open(self, filename, detectors=None):
-        """Method to create class from file(s)"""
-        pass
+        Returns:
+            (np.array, np.array, np.array): arrays with background counts,
+                                            counts variance, goodness of fit
+        """
+        tstart = np.atleast_1d(tstart)
+        tstop = np.atleast_1d(tstop)
+        counts, counts_var, good = [], [], []
+        for i, fitter in enumerate(self.fitters):
+            rates, rate_uncert = fitter._method.interpolate(tstart, tstop)
+            counts.append(rates[0] * exposure[i])
+            counts_var.append(0.5 * (rate_uncert[0] * exposure[i])**2)
+            good.append(np.ones_like(counts[-1], dtype=bool)) # set to True for now
+
+        return np.ravel(counts), np.ravel(counts_var), np.ravel(good)

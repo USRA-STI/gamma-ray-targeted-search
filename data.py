@@ -1,6 +1,7 @@
 import numpy as np
 
 from gdt.core.tte import PhotonList
+from gdt.core.collection import DataCollection
 from gdt.core.data_primitives import EventList, Gti
 from gdt.core.binning.binned import rebin_by_edge_index
 
@@ -35,45 +36,44 @@ def update_tte_trigtime(tte, t0):
                                 event_deadtime=tte.event_deadtime,
                                 overflow_deadtime=tte.overflow_deadtime)
 
-class PhaiiCountMatrix:
-    """
-    Class interface for retrieving the detector counts
-    matrix from a collection of PHAII data.
 
-    Args:
-        phaiis (DataCollection): Data collection object with PHAII data for each detector
-    """
-    def __init__(self, phaiis):
+class CountMatrix:
+    """Class for retrieving detector counts matrix.
 
-        self.phaiis = phaiis
+    Parameters:
+        data (DataCollection): a data collection object
+    """
+    def __init__(self, data: DataCollection):
+        """Constructor"""
+        # note: need to validate that data are TTE or Phaii
+        self.data = data
 
     @property
     def detectors(self):
-        return self.phaiis.items()
+        """(list): list of detector names"""
+        return self.data.items
 
-    def counts(self, tstart, tstop):
-        """Retrieve observed counts and their corresponding exposure
-        computed over a specific time bin
-    
+    @property
+    def ebounds(self):
+        """(list): list of ebounds object for each detector"""
+        # convenience method for validating energy binning against background fitters
+        return self.data.ebounds()
+
+    def counts(self, tstart: float, tstop: float):
+        """Retrieve observed counts and corresponding exposure
+        within the interval (tstop, tstart)
+
         Args:
-            tstart (float): start time of the counts window
-            tstop (float): stop time of the counts window
-    
+            tstart (float): interval start time in seconds
+            tstop (float): interval stop time in seconds
+
         Returns:
-            tuple: arrays of counts and exposure for each detector
+            (np.array, np.array): counts and exposure arrays
         """
         counts, exposure = [], []
-        for phaii in self.phaiis:
-            spec = phaii.to_spectrum(time_range=(tstart, tstop))
+        for spec in self.data.to_spectrum(time_range=(tstart, tstop)):
             counts.append(spec.counts)
+            # note: take the first exposure element since they're all the same
             exposure.append(spec.exposure[0])
 
         return np.ravel(counts), np.ravel(exposure)
-
-    def write(self, filename, detectors=None):
-        """Method to write class contents to file(s)"""
-        pass
-
-    def open(self, filename, detectors=None):
-        """Method to create class from file(s)"""
-        pass
