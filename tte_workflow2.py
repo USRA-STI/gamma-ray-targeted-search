@@ -35,7 +35,7 @@ detectors = list(settings['detectors'].keys())
 channel_edges = {det: settings['detectors'][det]['channel_edges'] for det in detectors}
 search_channels = {det: settings['detectors'][det]['search_channels'] for det in detectors}
 time_range = np.array([-1, 1]) * max([0.5 * settings['win_width'] + settings['max_dur'] + 1.024, 30])
-bkgd_range = [-40, 40]
+bkgd_fit_ranges = [[-20, 0], [10, 30]]
 phaii_resolution = settings['min_dur']
 channel_mask = np.ravel(
     [[channel in search_channels[det] for channel in range(len(channel_edges[det]) - 1)] for det in detectors])
@@ -94,7 +94,7 @@ from gdt.core.background.binned import Polynomial
 # initialize the background fitters
 clock0 = unix_time.time()
 backfitters = DataCollection.from_list(
-    [BackgroundFitter.from_phaii(phaii, Polynomial, time_ranges=[bkgd_range]) for phaii in phaiis],
+    [BackgroundFitter.from_phaii(phaii, Polynomial, time_ranges=bkgd_fit_ranges) for phaii in phaiis],
     names=detectors)
 backfitters.fit(order=1)
 
@@ -128,7 +128,7 @@ for i, det in enumerate(detectors):
 import gts
 import utils
 
-kwargs = {'templates': [0, 1, 2], 'channels': [1, 2, 3, 4, 5, 6]}
+kwargs = {'templates': [0, 1, 2], 'channels': [0, 1, 2, 3, 4, 5, 6, 7]}
 nai_response = gts.loadResponse('templates/GBM/direct/nai.npy', **kwargs)
 nai_response += gts.loadResponse('templates/GBM/atmo_nai/atmrates_az140_zen130.npy', **kwargs)
 
@@ -169,6 +169,8 @@ mask = channel_mask & good
 masked_counts = counts[mask]
 masked_bkgd_counts = bkgd_counts[mask]
 masked_bkgd_var = bkgd_var[mask]
+
+masked_rsp = rsp[:,:,mask] # apply same detector channel mask to response
 
 like = Likelihood(ntemplate, skyGrid.size)
 like.calculate(masked_counts, masked_bkgd_counts, masked_bkgd_var, masked_rsp)

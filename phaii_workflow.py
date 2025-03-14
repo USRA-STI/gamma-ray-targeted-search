@@ -120,7 +120,7 @@ for i, det in enumerate(detectors):
 import gts
 import utils
 
-kwargs = {'templates': [0, 1, 2], 'channels': [1, 2, 3, 4, 5, 6]}
+kwargs = {'templates': [0, 1, 2], 'channels': [0, 1, 2, 3, 4, 5, 6, 7]}
 nai_response = gts.loadResponse('templates/GBM/direct/nai.npy', **kwargs)
 nai_response += gts.loadResponse('templates/GBM/atmo_nai/atmrates_az140_zen130.npy', **kwargs)
 
@@ -161,6 +161,8 @@ mask = channel_mask & good
 masked_counts = counts[mask]
 masked_bkgd_counts = bkgd_counts[mask]
 masked_bkgd_var = bkgd_var[mask]
+
+masked_rsp = rsp[:,:,mask] # apply same detector channel mask to response
 
 like = Likelihood(ntemplate, skyGrid.size)
 like.calculate(masked_counts, masked_bkgd_counts, masked_bkgd_var, masked_rsp)
