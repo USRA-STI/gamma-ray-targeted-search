@@ -1,6 +1,6 @@
 # Copyright 2017-2022 by Universities Space Research Association (USRA). All rights reserved.
 #
-# Developed by: William Cleveland and Adam Goldstein
+# Developed by: William Cleveland, Adam Goldstein, and Suman Bala
 #               Universities Space Research Association
 #               Science and Technology Institute
 #               https://sti.usra.edu
@@ -39,10 +39,6 @@ import os
 from scipy.integrate import trapezoid
 from scipy.optimize import fmin
 
-def pe_values(results):
-    """Extract phosphorescence event (pe) values from the structured array in the Results object."""
-    return results._data[['pe_0', 'pe_1', 'pe_2']]
-
 def remove_pe(results, cr1=5, cr2=1, cr2thr=8):
     """
     Apply phosphorescence event (pe) veto and return a new Results object with the veto applied.
@@ -59,11 +55,9 @@ def remove_pe(results, cr1=5, cr2=1, cr2thr=8):
     if results.size == 0:
         return results
 
-    pe_vals = pe_values(results)
-
-    icr1 = pe_vals['pe_0'] / np.maximum(0.1, pe_vals['pe_1']) < cr1
-    icr2 = (pe_vals['pe_0'] / np.maximum(0.1, pe_vals['pe_2']) < cr2) | \
-           (pe_vals['pe_0'] < cr2thr)
+    icr1 = results['pe_0'] / np.maximum(0.1, results['pe_1']) < cr1
+    icr2 = (results['pe_0'] / np.maximum(0.1, results['pe_2']) < cr2) | \
+           (results['pe_0'] < cr2thr)
 
     # Create a new Results object with filtered data
     filtered_data = results._data[(icr1 & icr2)]
@@ -72,16 +66,16 @@ def remove_pe(results, cr1=5, cr2=1, cr2thr=8):
 
 def remove_dur_spec(results, dur, spec):
     if results.size > 0:
-        mask = (results.durations == dur) & (results.templates == spec)
+        mask = (results['durations'] == dur) & (results['templates'] == spec)
         results._data = results._data[~mask]
     return results
 
 def sky_cut(results, sky_diff=2):
     if results.size == 0:
         return results
-    isky = (results.coinclr - results.loglr) > sky_diff
-    obj = Results.create(results._data[isky], time_ref=results._timeref,
-                         templates=results._template_names)
+    isky = (results['coinclr'] - results['loglr']) > sky_diff
+    obj = Results.create(results[isky], time_ref=results.t0,
+                         templates=results.template_names)
     return obj
 
 def downselect(results, overlap_factor=0.2, threshold=None, combine_spec=True, 
@@ -90,9 +84,9 @@ def downselect(results, overlap_factor=0.2, threshold=None, combine_spec=True,
         return results
     
     if threshold:
-        mask = (results.loglr >= threshold)
+        mask = (results['loglr'] >= threshold)
         if (mask.sum() == 0) and no_empty:
-            mask = (results.loglr == results.loglr.max())
+            mask = (results['loglr'] == results['loglr'].max())
         data = results._data[mask]
     else:
         data = results._data        
@@ -119,50 +113,41 @@ def downselect(results, overlap_factor=0.2, threshold=None, combine_spec=True,
     obj = Results.create(data, time_ref=results._timeref, templates=results._template_names)
     return obj
 
-def flags(results):
-    """Extract the instrument-specific flags from the Results object."""
-    return results._data['flags']
-
-def atmoscat(results):
-    """Extract atmospheric scattering effects indicator from the Results object."""
-    return results._data['atmoscat']
-
-
 class Results:
     dtype = [
         ('time', 'f8'),
         ('duration', 'f8'),
-        ('in_gti', 'bool'), # optional
-        ('atmoscat', 'bool'), #optional
-        ('flags', 'i4'), # make i8 and optional
-        ('locs_sc_az', 'f8'),
-        ('locs_sc_zen', 'f8'),
-        ('locs_ra', 'f8'),
-        ('locs_dec', 'f8'),
+        ('az', 'f8'),
+        ('zen', 'f8'),
+        ('ra', 'f8'),
+        ('dec', 'f8'),
         ('template', 'i4'),
         ('amplitude', 'f8'),
-        ('snr_0', 'f8'), #optional
-        ('snr_1', 'f8'), #optional
-        ('snr_2', 'f8'), #optional
-        ('chisq_0', 'f8'),
         ('chisq_1', 'f8'),
-        ('sun_angle', 'f8'), # Optional
-        ('geo_angle', 'f8'), # Optional
+        ('chisq_0', 'f8'),
         ('loglr', 'f8'),
         ('coinclr', 'f8'),
-        ('pe_0', 'f8'),#optional
-        ('pe_1', 'f8'),#optional
-        ('pe_2', 'f8'),#optional
+        #('in_gti', 'bool'), # optional
+        #('atmoscat', 'bool'), #optional
+        #('flags', 'i4'), # make i8 and optional
+        #('snr_0', 'f8'), #optional
+        #('snr_1', 'f8'), #optional
+        #('snr_2', 'f8'), #optional
+        #('sun_angle', 'f8'), # Optional
+        #('geo_angle', 'f8'), # Optional
+        #('pe_0', 'f8'),#optional
+        #('pe_1', 'f8'),#optional
+        #('pe_2', 'f8'),#optional
     ]
 
     def __init__(self):
         """Class constructor"""
-        self._data = np.array([], dtype=self.dtype)
+        self._data = None
         self._timeref = 0.0
         self._template_names = None
 
     @property
-    def t0(self): # call t_ref
+    def t0(self):
         """(float): The reference time for the results"""
         return self._timeref 
 
@@ -174,136 +159,40 @@ class Results:
     @property
     def timescales(self):
         """(np.ndarray): The photon emission timescales contained in the search"""
-        return np.unique(self._data['duration'])
+        return np.unique(self['duration'])
 
     @property
-    def window_width(self): # search window width
+    def search_window(self):
         """(np.ndarray): The duration in seconds of the search window"""
-        return np.max(self._data['time']) - np.min(self._data['time'])
-
-    @property
-    def times(self): # no need
-        """(np.ndarray): central times of the search bins"""
-        return self._data['time']
+        return np.max(self['time']) - np.min(self['time'])
 
     @property
     def times_relative(self):
         """(np.ndarray): The array of bin times relative to the search time"""
-        return self._data['time'] - self._timeref
+        return self['time'] - self._timeref
 
     @property
     def tstart(self):
         """(np.ndarray): start times of the search bins"""
-        return self._data['time'] - self._data['duration'] / 2.0
+        return self['time'] - 0.5 * self['duration']
 
     @property
     def tstop(self):
         """(np.ndarray): stop times of the search bins"""
-        return self._data['time'] + self._data['duration'] / 2.0
-
-    @property
-    def durations(self): # not needed 
-        """(np.ndarray): durations of the search bins"""
-        return self._data['duration']
-
-    @property
-    def in_gti(self): # not needed 
-        """(np.ndarray): True when search bin is within a good time interval (GTI) of the underlying data"""
-        return self._data['in_gti']
-
-    @property
-    def locs_sc(self): # Outside the Class
-        """(np.ndarray): spacecraft frame azimuth and zenith in degrees of the best-fit position for a search bin"""
-        az = self._data['locs_sc_az']
-        az[(az < 0.0)] += 360.0
-        zen = self._data['locs_sc_zen']
-        return (az, zen)
-
-    @property
-    def locs(self): # Outside the Class
-        """(np.ndarray): right ascension and declination in degrees in the spacecraft frame of the best-fit position for a search bin"""
-        ra = self._data['locs_ra']
-        ra[(ra < 0.0)] += 360.0
-        dec = self._data['locs_dec']
-        return (ra, dec)
+        return self['time'] + 0.5 * self['duration']
 
     @property
     def templates(self):
         """(np.ndarray): best-fit spectral templates for each search bin"""
         if self._template_names is not None:
-            return self._template_names[self._data['template']]
+            return self._template_names[self['template']]
         else:
-            return self._data['template']
+            return self['template']
 
-    @property
-    def amplitudes(self): # Remove
-        """(np.ndarray): best-fit photon flux marginalized over the sky for each search bin"""
-        return self._data['amplitude']
-
-    @property
-    def snr(self): # Outside the Class
-        """(np.ndarray): signal-to-noise ratios for:
-                            1. the best-fit position and spectral template
-                            2. the highest single detector snr summed over a user-specified energy range
-                            3. the second highest single detector snr summed over a user-specified energy range
-        """
-        return self._data[['snr_0', 'snr_1', 'snr_2']]
-
-    @property
-    def chisq(self):
-        """(np.ndarray): chi square computed relative to the response for the best-fit position and spectral template"""
-        return self._data[['chisq_0', 'chisq_1']] # change the name
-
-    @property
-    def sun_angle(self): # Outside the class
-        """(np.ndarray): angle between the best-fit location and sun position in degrees"""
-        return np.rad2deg(self._data['sun_angle'])
-
-    @property
-    def geo_angle(self): # Outside the class
-        """(np.ndarray): angle between the best-fit location and Earth center in degrees"""
-        return np.rad2deg(self._data['geo_angle'])
-
-    @property
-    def loglr(self):
-        """(np.ndarray): the log-likelihood ratio for each search bin.
-        This is marginalized over the full sky and all templates using a uniform prior."""
-        return self._data['loglr']
-
-    @property
-    def coinclr(self):
-        """(np.ndarray): the 'coincident' log-likelihood ratio for each search bin.
-        This is marginalized over the sky using an external localization prior in addition to a uniform prior over spectral templates."""
-        return self._data['coinclr']
-
-    def sort(self, loglr=False, coinclr=False, time=False, duration=False, 
-             template=False, snr=False, sun_angle=False, geo_angle=False, 
-             amplitude=False, reverse=False):
-        if loglr:
-            idx = np.argsort(self.loglr)
-        elif coinclr:
-            idx = np.argsort(self.coinclr)
-        elif time:
-            idx = np.argsort(self.times)
-        elif duration:
-            idx = np.argsort(self.durations)
-        elif template:
-            idx = np.argsort(self.templates)
-        elif snr:
-            idx = np.argsort(self.snr[:,0])
-        elif amplitude:
-            idx = np.argsort(self.amplitudes)            
-        elif sun_angle:
-            idx = np.argsort(self.sun_angle)
-        elif geo_angle:
-            idx = np.argsort(self.geo_angle)
-        else:
-            raise ValueError("Must set a valid value to sort over")
-        
+    def sort(self, colname, reverse=False):
+        self._data.sort(order=colname)
         if reverse:
-            idx = idx[::-1]
-        
-        self._data = self._data[idx] # Modify to take string 
+            self._data = self._data[::-1]
 
     def write(self, output=None): # have list of option to show, formatting
         if output is None:
@@ -340,11 +229,9 @@ class Results:
         return cls.create(file["data"], time_ref=time_ref, templates=file["template_names"])
 
     @classmethod
-    def create(cls, data, time_ref=0.0, templates=['hard', 'norm', 'soft']):
+    def create(cls, size, time_ref=0.0, templates=['hard', 'norm', 'soft']):
         obj = cls()
-        obj._data = data
-        if obj.size == 0:
-            obj._data = np.array([], dtype=obj.dtype)
+        obj._data = np.empty(size, dtype=obj.dtype)
         obj._timeref = time_ref
         obj._template_names = np.asarray(templates)
         return obj
