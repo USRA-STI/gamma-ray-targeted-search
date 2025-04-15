@@ -39,346 +39,246 @@ import os
 from scipy.integrate import trapezoid
 from scipy.optimize import fmin
 
-class Results():
-    """Class for the npy results files
-    
-    Attributes:
-    -----------
-    amplitudes: np.array
-        Array of MLE count amplitudes for each bin
-    atmoscat: np.array
-        Boolean array indicating if the atmospheric scattering was used
-    chisq: np.array
-        The chisq and chisq+ for each bin
-    coinclr: np.array
-        The spatially-coincident log-likelihood ratio for each bin
-    durations: np.array
-        The bin durations
-    flags: np.array
-        Array of "good" flags: if background fit was good, or pre-threshold used
-    geo_angle: np.array
-        The angle between the localization centroid and geocenter for each bin
-    in_gti: np.array
-        Boolean array indicating if each bin is in a GTI
-    locs: (np.array, np.array)
-        The RA and Dec of the localization centroid for each bin
-    locs_sc: (np.array, np.array)
-        The spacecraft az/zen of the localization centroid for each bin
-    loglr: np.array
-        The log-likelihood ratio for each bin
-    pe_values: np.array
-        The phosphorescent event values for each bin
-    size: int
-        The number of bins
-    snr: np.array
-        The S/N ratio of each bin
-    sun_angle: np.array
-        The angle between the localization centroid and sun for each bin
-    t0: float
-        The reference time
-    templates: np.array
-        The spectral template for each bin
-    times: np.array
-        The array of bin times
-    times_relative: np.array
-        The array of bin times relative to the search time
-    timescales: list
-        The timescales contained in the search
-    window_width: float
-        The duration in seconds of the search window
-    
-    Public Methods:
-    ---------------
-    downselect:
-        Filter and combine events to keep only the most significant of 
-        overlapping bins. Returns new Results
-    remove_dur_spec:
-        Remove a combination of duration/spectrum
-    remove_pe:
-        Remove likely phosphorescent events and return new Results
-    save:
-        Save the Results to a npy file
-    sky_cut:
-        Remove bins that have less than a threshold difference between coinclr
-        and loglr. Returns new Results
-    sort: 
-        In-place sort on an attribute
-    write:
-        Pretty-print write of the results to a file or stdout
-    
-    Class Methods:
-    ---------------
-    create:
-        Create a Results object given a valid data array
-    open:
-        Open an existing data array in a valid npy file
+def pe_values(results):
+    """Extract phosphorescence event (pe) values from the structured array in the Results object."""
+    return results._data[['pe_0', 'pe_1', 'pe_2']]
+
+def remove_pe(results, cr1=5, cr2=1, cr2thr=8):
     """
+    Apply phosphorescence event (pe) veto and return a new Results object with the veto applied.
+    
+    Parameters:
+    results (Results): The Results object to filter.
+    cr1 (float): The threshold for pe_0/pe_1 ratio.
+    cr2 (float): The threshold for pe_0/pe_2 ratio or pe_0 itself.
+    cr2thr (float): The maximum value of pe_0 for vetoing.
+    
+    Returns:
+    Results: A new Results object with the veto applied.
+    """
+    if results.size == 0:
+        return results
+
+    pe_vals = pe_values(results)
+
+    icr1 = pe_vals['pe_0'] / np.maximum(0.1, pe_vals['pe_1']) < cr1
+    icr2 = (pe_vals['pe_0'] / np.maximum(0.1, pe_vals['pe_2']) < cr2) | \
+           (pe_vals['pe_0'] < cr2thr)
+
+    # Create a new Results object with filtered data
+    filtered_data = results._data[(icr1 & icr2)]
+    return Results.create(filtered_data, time_ref=results._timeref, templates=results._template_names)
+
+
+def remove_dur_spec(results, dur, spec):
+    if results.size > 0:
+        mask = (results.durations == dur) & (results.templates == spec)
+        results._data = results._data[~mask]
+    return results
+
+def sky_cut(results, sky_diff=2):
+    if results.size == 0:
+        return results
+    isky = (results.coinclr - results.loglr) > sky_diff
+    obj = Results.create(results._data[isky], time_ref=results._timeref,
+                         templates=results._template_names)
+    return obj
+
+def downselect(results, overlap_factor=0.2, threshold=None, combine_spec=True, 
+               fixedwin=0, no_empty=False):
+    if results.size == 0:
+        return results
+    
+    if threshold:
+        mask = (results.loglr >= threshold)
+        if (mask.sum() == 0) and no_empty:
+            mask = (results.loglr == results.loglr.max())
+        data = results._data[mask]
+    else:
+        data = results._data        
+    
+    unique_events = []
+    sorted_events = data[(-data['loglr']).argsort()]
+    
+    for e1 in sorted_events:
+        keep = True
+        for e2 in unique_events:
+            toverlap = min(e1['time'] + e1['duration'] / 2.0, e2['time'] + e2['duration'] / 2.0) \
+                       - max(e1['time'] - e1['duration'] / 2.0, e2['time'] - e2['duration'] / 2.0) + fixedwin
+            
+            if (combine_spec or (e2['template'] == e1['template'])) and (toverlap > 0):
+                amplitude = e1['snr_0'] / np.sqrt(e1['duration'])
+                snr_expected = amplitude * toverlap / np.sqrt(e2['duration'])
+                if e2['snr_0'] * overlap_factor < snr_expected:
+                    keep = False
+                    break
+        if keep:
+            unique_events.append(e1)
+    
+    data = np.array(unique_events, dtype=results.dtype)
+    obj = Results.create(data, time_ref=results._timeref, templates=results._template_names)
+    return obj
+
+def flags(results):
+    """Extract the instrument-specific flags from the Results object."""
+    return results._data['flags']
+
+def atmoscat(results):
+    """Extract atmospheric scattering effects indicator from the Results object."""
+    return results._data['atmoscat']
+
+
+class Results:
+    dtype = [
+        ('time', 'f8'),
+        ('duration', 'f8'),
+        ('in_gti', 'bool'), # optional
+        ('atmoscat', 'bool'), #optional
+        ('flags', 'i4'), # make i8 and optional
+        ('locs_sc_az', 'f8'),
+        ('locs_sc_zen', 'f8'),
+        ('locs_ra', 'f8'),
+        ('locs_dec', 'f8'),
+        ('template', 'i4'),
+        ('amplitude', 'f8'),
+        ('snr_0', 'f8'), #optional
+        ('snr_1', 'f8'), #optional
+        ('snr_2', 'f8'), #optional
+        ('chisq_0', 'f8'),
+        ('chisq_1', 'f8'),
+        ('sun_angle', 'f8'), # Optional
+        ('geo_angle', 'f8'), # Optional
+        ('loglr', 'f8'),
+        ('coinclr', 'f8'),
+        ('pe_0', 'f8'),#optional
+        ('pe_1', 'f8'),#optional
+        ('pe_2', 'f8'),#optional
+    ]
+
     def __init__(self):
         """Class constructor"""
-        self._data = None
+        self._data = np.array([], dtype=self.dtype)
         self._timeref = 0.0
         self._template_names = None
 
     @property
-    def t0(self):
+    def t0(self): # call t_ref
         """(float): The reference time for the results"""
-        return self._timeref
-    
+        return self._timeref 
+
     @property
     def size(self):
         """(int): total number of results"""
         return self._data.shape[0]
-    
+
     @property
     def timescales(self):
         """(np.ndarray): The photon emission timescales contained in the search"""
-        return np.unique(self.durations)
-    
+        return np.unique(self._data['duration'])
+
     @property
-    def window_width(self):
+    def window_width(self): # search window width
         """(np.ndarray): The duration in seconds of the search window"""
-        return np.max(self.times)-np.min(self.times)
-        
+        return np.max(self._data['time']) - np.min(self._data['time'])
+
     @property
-    def times(self):
+    def times(self): # no need
         """(np.ndarray): central times of the search bins"""
-        return self._data[:,0]
-    
+        return self._data['time']
+
     @property
     def times_relative(self):
         """(np.ndarray): The array of bin times relative to the search time"""
-        return self.times-self._timeref
-    
+        return self._data['time'] - self._timeref
+
     @property
     def tstart(self):
         """(np.ndarray): start times of the search bins"""
-        return self.times-self.durations/2.0
-    
+        return self._data['time'] - self._data['duration'] / 2.0
+
     @property
     def tstop(self):
         """(np.ndarray): stop times of the search bins"""
-        return self.times+self.durations/2.0
-        
+        return self._data['time'] + self._data['duration'] / 2.0
+
     @property
-    def durations(self):
+    def durations(self): # not needed 
         """(np.ndarray): durations of the search bins"""
-        return self._data[:,1]
-    
+        return self._data['duration']
+
     @property
-    def in_gti(self):
+    def in_gti(self): # not needed 
         """(np.ndarray): True when search bin is within a good time interval (GTI) of the underlying data"""
-        return self._data[:,2].astype(bool)
-    
+        return self._data['in_gti']
+
     @property
-    def atmoscat(self):
-        """(np.ndarray): True when atmospheric scattering effects are included in the response matrix"""
-        return self._data[:,3].astype(bool)
-    
-    @property
-    def flags(self):
-        """(np.ndarray): additional instrument-specific flags"""
-        return self._data[:,4].astype(int)
-        
-    @property
-    def locs_sc(self):
+    def locs_sc(self): # Outside the Class
         """(np.ndarray): spacecraft frame azimuth and zenith in degrees of the best-fit position for a search bin"""
-        az = self._data[:,5]
+        az = self._data['locs_sc_az']
         az[(az < 0.0)] += 360.0
-        zen = self._data[:,6]
+        zen = self._data['locs_sc_zen']
         return (az, zen)
-    
+
     @property
-    def locs(self):
+    def locs(self): # Outside the Class
         """(np.ndarray): right ascension and declination in degrees in the spacecraft frame of the best-fit position for a search bin"""
-        ra = self._data[:,7]
+        ra = self._data['locs_ra']
         ra[(ra < 0.0)] += 360.0
-        dec = self._data[:,8]
+        dec = self._data['locs_dec']
         return (ra, dec)
-    
+
     @property
     def templates(self):
         """(np.ndarray): best-fit spectral templates for each search bin"""
-        if self._template_names is not None: 
-            return self._template_names[self._data[:,9].astype(int)]
+        if self._template_names is not None:
+            return self._template_names[self._data['template']]
         else:
-            return self._data[:,9].astype(int)
-    
+            return self._data['template']
+
     @property
-    def amplitudes(self):
+    def amplitudes(self): # Remove
         """(np.ndarray): best-fit photon flux marginalized over the sky for each search bin"""
-        return self._data[:,10]
-    
+        return self._data['amplitude']
+
     @property
-    def snr(self):
+    def snr(self): # Outside the Class
         """(np.ndarray): signal-to-noise ratios for:
                             1. the best-fit position and spectral template
                             2. the highest single detector snr summed over a user-specified energy range
                             3. the second highest single detector snr summed over a user-specified energy range
         """
-        return self._data[:,11:14]
-    
+        return self._data[['snr_0', 'snr_1', 'snr_2']]
+
     @property
     def chisq(self):
         """(np.ndarray): chi square computed relative to the response for the best-fit position and spectral template"""
-        return self._data[:,14:16]
-    
-    @property
-    def sun_angle(self):
-        """(np.ndarray): angle between the best-fit location and sun position in degrees"""
-        return np.rad2deg(self._data[:,16])
+        return self._data[['chisq_0', 'chisq_1']] # change the name
 
     @property
-    def geo_angle(self):
+    def sun_angle(self): # Outside the class
+        """(np.ndarray): angle between the best-fit location and sun position in degrees"""
+        return np.rad2deg(self._data['sun_angle'])
+
+    @property
+    def geo_angle(self): # Outside the class
         """(np.ndarray): angle between the best-fit location and Earth center in degrees"""
-        return np.rad2deg(self._data[:,17])
-    
+        return np.rad2deg(self._data['geo_angle'])
+
     @property
     def loglr(self):
         """(np.ndarray): the log-likelihood ratio for each search bin.
         This is marginalized over the full sky and all templates using a uniform prior."""
-        return self._data[:,18]
-    
+        return self._data['loglr']
+
     @property
     def coinclr(self):
         """(np.ndarray): the 'coincident' log-likelihood ratio for each search bin.
         This is marginalized over the sky using an external localization prior in addition to a uniform prior over spectral templates."""
-        return self._data[:,19]
-        
-    @property
-    def pe_values(self):
-        """(np.ndarray): variables used in the instrument-specific phosphorescence event (pe) veto."""
-        return self._data[:,20:]
-    
-    def remove_pe(self, cr1=5, cr2=1, cr2thr=8):
-        """Remove likely phosphorescent events (PEs) and return new Results
+        return self._data['coinclr']
 
-        Args:
-            cr1 (float, optional):
-                Threshold value for comparing detectors with highest and
-                second highest signal-to-noise ratios in lowest energy channel
-            cr2 (float, optional):
-                Threshold value for comparing signal-to-noise ratios for the
-                lowest two energy channels in detector with the highest signal-to-noise ratio from cr1
-            cr2thr (float, optional):
-                Absolute threshold on signal-to-noise ratio of second lowest energy channel
-                in detector with the highest signal-to-noise ratio from cr1
-        
-        Returns:
-            (Results): A new Results object with the PEs removed
-        """
-        if self.size == 0:
-            return self
-        icr1 = self.pe_values[:,0] / np.maximum(0.1, self.pe_values[:,1]) < cr1
-        icr2 = (self.pe_values[:,0] / np.maximum(0.1, self.pe_values[:,2]) < cr2) | \
-               (self.pe_values[:,0] < cr2thr)
-        
-        obj = Results.create(self._data[(icr1 & icr2),:], time_ref=self._timeref,
-                             templates=self._template_names)
-        return obj
-    
-    def remove_dur_spec(self, dur, spec):
-        """Remove a combination of duration/spectrum.  
-        This is done in place without creating a new object
-
-        Args:
-            dur (float): A timescale to remove
-            spec (str): A template to remove
-        """
-        if self.size > 0:
-            mask = (self.durations == dur) & (self.templates == spec)
-            self._data = self._data[~mask,:]
-      
-    def sky_cut(self, sky_diff=2):
-        """Remove bins that have less than a threshold difference between 
-        coinclr and loglr. Returns a new Results object.
-
-        Args:
-        sky_diff (float, optional):
-            The threshold such that bins with (coinclr-loglr) < sky_diff
-            are removed.  Default is 2.
-        
-        Returns:
-            (Results): A new Results object with the resulting bins removed
-        """
-        if self.size == 0:
-            return self
-        isky = (self.coinclr-self.loglr) > sky_diff
-        obj = Results.create(self._data[isky,:], time_ref=self._timeref,
-                             templates=self._template_names)
-        return obj
-        
-    def downselect(self, overlap_factor=0.2, threshold=None, combine_spec=True, 
-                   fixedwin=0, no_empty=False):
-        """Filter and combine events to keep only the most significant of 
-        overlapping bins. Returns a new Results object.
-
-        Args:
-            overlap_factor (float, optional):
-                Only remove a bin if a brighter bin has a larger S/N ratio by this
-                factor. Default is 0.2.
-            threshold (float, optional):
-                Filter out bins with loglr below this threshold.  If not set, no
-                filtering is performed.
-            combine_spec (bool, optional):
-                If True, combine spectral templates
-            fixedwin (float, optional):
-                Fixed coincidence window. Default is 0.
-                NOTE: The behavior of this argument is not fully understood. Might create problems.
-            no_empty (bool, optional):
-                If True, forces the single bin with the most significant loglr to be 
-                retained, even if it is below the defined threshold. Default is False.
-        
-        Returns:
-            (Results): A new Results object with the filtered and downselected bins
-        """
-        if self.size == 0:
-            return self
-        
-        if threshold:
-            mask = (self.loglr >= threshold)
-            if (mask.sum() == 0) and no_empty:
-                mask = (self.loglr == self.loglr.max())
-            data = self._data[mask,:]
-        else:
-            data = self._data        
-        
-        unique_events = []
-        sorted_events = data[(-data[:,18]).argsort(), :]
-        
-        for e1 in sorted_events:
-            keep = True
-            for e2 in unique_events:
-                toverlap = min(e1[0]+e1[1]/2.0, e2[0]+e2[1]/2.0) \
-                           - max(e1[0]-e1[1]/2.0, e2[0]-e2[1]/2.0) + fixedwin
-                
-                if (combine_spec or (e2[9] == e1[9])) and (toverlap > 0):
-                    amplitude = e1[11]/np.sqrt(e1[1])
-                    snr_expected = amplitude * toverlap / np.sqrt(e2[1])
-                    if e2[11] * overlap_factor < snr_expected:
-                        keep = False
-                        break
-            if (keep):
-                unique_events.append(e1)
-        
-        data = np.array(unique_events)
-        obj = Results.create(data, time_ref=self._timeref, templates=self._template_names)
-        return obj
-    
     def sort(self, loglr=False, coinclr=False, time=False, duration=False, 
              template=False, snr=False, sun_angle=False, geo_angle=False, 
              amplitude=False, reverse=False):
-        """ In-place sort on an attribute
-
-        NOTE: We should either use getattr() or a structured numpy array to simplify this
-        function. That would let us use a string as the argument for the sorting field.
-
-        Args:
-            loglr, coinclr, time, duration, template, snr, sun_angle, geo_angle,
-            amplitude (bool):
-                Set one of these to True to sort on that attribute.
-            reverse (bool, optional):
-                If True, then reverse sort. Default is False
-        """
         if loglr:
             idx = np.argsort(self.loglr)
         elif coinclr:
@@ -403,15 +303,9 @@ class Results():
         if reverse:
             idx = idx[::-1]
         
-        self._data = self._data[idx,:]
-    
-    def write(self, output=None):
-        """Pretty-print write of the results to a file or stdout
+        self._data = self._data[idx] # Modify to take string 
 
-        Args:
-            output (file handle, optional):
-                The file handle to write to.  If not set, will write to stdout.
-        """
+    def write(self, output=None): # have list of option to show, formatting
         if output is None:
             output = sys.stdout
         
@@ -426,62 +320,31 @@ class Results():
         output.write(
             "--------------------------------------------------------------------------------------------------------------------------------------------------\n")
         data = np.copy(self._data)
-        data[:,5], data[:,6] = self.locs_sc
-        data[:,7], data[:,8] = self.locs
+        az, zen = self.locs_sc
+        ra, dec = self.locs
+        data['locs_sc_az'], data['locs_sc_zen'] = az, zen
+        data['locs_ra'], data['locs_dec'] = ra, dec
         for row in data:
-            row = list(row)
-            row[0] -= self._timeref
+            row['time'] -= self._timeref
             output.write(
                 "%13.3f %7.3f %3d %4d %4d  %5.1f %5.1f %5.1f %5.1f %1d %5.2f %5.1f %5.1f %5.1f %5.1f %5.1f %5.1f %5.1f %8.2f %8.2f %5.1f %5.1f %5.1f\n" % tuple(
                     row))
-    
-    def save(self, directory, filename=None):
-        """Save the Results to a npy file
 
-        Args:
-            directory (str):
-                The directory to write to
-            filename (str, optional):
-                The filename to write to        
-        """
+    def save(self, directory, filename=None):
         np.savez(os.path.join(directory, filename),
-                 data=self._data, template_names=self._template_names)
-    
+                 data=self._data, template_names=self._template_names) # schek how the array can be saved 
+
     @classmethod
     def open(cls, filename, time_ref=0.0):
-        """Open an existing data array in a valid npy file
-
-        Args:
-            filename (str):
-                The full filename of the file to be opened
-            time_ref (float, optional):
-                The reference time to apply to the data. Default is 0.
-        
-        Returns:
-            (Results): The Results object containing the data
-        """
         file = np.load(filename, allow_pickle=True)
         return cls.create(file["data"], time_ref=time_ref, templates=file["template_names"])
-    
+
     @classmethod
     def create(cls, data, time_ref=0.0, templates=['hard', 'norm', 'soft']):
-        """Create a Results object given a valid data array.
-
-        Args:
-            data (np.array):
-                A valid array of shape (n, 23) for n bins
-            time_ref (float, optional):
-                The reference time to apply to the data. Default is 0.
-            templates (list):
-                A list of template names. Default is ['hard', 'norm', 'soft']
-        
-        Returns:
-            (Results): The Results object containing the data
-        """
         obj = cls()
         obj._data = data
         if obj.size == 0:
-            obj._data = obj._data.reshape(0, 23)
+            obj._data = np.array([], dtype=obj.dtype)
         obj._timeref = time_ref
         obj._template_names = np.asarray(templates)
         return obj
