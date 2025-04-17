@@ -36,6 +36,8 @@ import numpy as np
 import healpy as hp
 import sys
 import os
+import numpy.lib.recfunctions
+
 from scipy.integrate import trapezoid
 from scipy.optimize import fmin
 
@@ -114,19 +116,19 @@ def downselect(results, overlap_factor=0.2, threshold=None, combine_spec=True,
     return obj
 
 class Results:
-    dtype = [
-        ('time', 'f8'),
+    required_dtype = [
+        ('central_time', 'f8'),
         ('duration', 'f8'),
-        ('az', 'f8'),
-        ('zen', 'f8'),
         ('ra', 'f8'),
         ('dec', 'f8'),
         ('template', 'i4'),
-        ('amplitude', 'f8'),
-        ('chisq_1', 'f8'),
-        ('chisq_0', 'f8'),
+        ('flux_amplitude', 'f8'),
+        ('reduced_chisq', 'f8'),
+        ('chiplusdof', 'f8'),
         ('loglr', 'f8'),
         ('coinclr', 'f8'),
+        #('az', 'f8'), # optional, not necessary for multi-instrument
+        #('zen', 'f8'), # optional, not necessary for multi-instrument
         #('in_gti', 'bool'), # optional
         #('atmoscat', 'bool'), #optional
         #('flags', 'i4'), # make i8 and optional
@@ -142,98 +144,53 @@ class Results:
 
     def __init__(self):
         """Class constructor"""
-        self._data = None
-        self._timeref = 0.0
-        self._template_names = None
-
-    @property
-    def t0(self):
-        """(float): The reference time for the results"""
-        return self._timeref 
+        self.data = None
+        self.t0 = 0.0
+        self.template_names = None
 
     @property
     def size(self):
         """(int): total number of results"""
-        return self._data.shape[0]
-
-    @property
-    def timescales(self):
-        """(np.ndarray): The photon emission timescales contained in the search"""
-        return np.unique(self['duration'])
+        return self.data.shape[0]
 
     @property
     def search_window(self):
         """(np.ndarray): The duration in seconds of the search window"""
         return np.max(self['time']) - np.min(self['time'])
 
-    @property
-    def times_relative(self):
-        """(np.ndarray): The array of bin times relative to the search time"""
-        return self['time'] - self._timeref
-
-    @property
-    def tstart(self):
-        """(np.ndarray): start times of the search bins"""
-        return self['time'] - 0.5 * self['duration']
-
-    @property
-    def tstop(self):
-        """(np.ndarray): stop times of the search bins"""
-        return self['time'] + 0.5 * self['duration']
-
-    @property
-    def templates(self):
-        """(np.ndarray): best-fit spectral templates for each search bin"""
-        if self._template_names is not None:
-            return self._template_names[self['template']]
-        else:
-            return self['template']
-
-    def sort(self, colname, reverse=False):
-        self._data.sort(order=colname)
-        if reverse:
-            self._data = self._data[::-1]
-
-    def write(self, output=None): # have list of option to show, formatting
-        if output is None:
-            output = sys.stdout
-        
-        output.write('Total number of bins: {}\n'.format(self.size))
-        output.write('In GTI: {}\n'.format(np.sum(self.in_gti)))
-        output.write('Used atmoscat: {}\n'.format(np.sum(self.atmoscat)))
-        output.write('Pre-filtered: {}\n'.format(np.sum(self.flags == 2)))
-        output.write(
-            "--------------------------------------------------------------------------------------------------------------------------------------------------\n")
-        output.write(
-            "    tcent    duration  gti rock good  phi  theta  ra  dec  spec ampli  snr  snr0  snr1 chisq chisq+ sun  earth    logLR   coincLR  PE0   PE1   PE2\n")
-        output.write(
-            "--------------------------------------------------------------------------------------------------------------------------------------------------\n")
-        data = np.copy(self._data)
-        az, zen = self.locs_sc
-        ra, dec = self.locs
-        data['locs_sc_az'], data['locs_sc_zen'] = az, zen
-        data['locs_ra'], data['locs_dec'] = ra, dec
-        for row in data:
-            row['time'] -= self._timeref
-            output.write(
-                "%13.3f %7.3f %3d %4d %4d  %5.1f %5.1f %5.1f %5.1f %1d %5.2f %5.1f %5.1f %5.1f %5.1f %5.1f %5.1f %5.1f %8.2f %8.2f %5.1f %5.1f %5.1f\n" % tuple(
-                    row))
-
     def save(self, directory, filename=None):
         np.savez(os.path.join(directory, filename),
-                 data=self._data, template_names=self._template_names) # schek how the array can be saved 
+                 template_names=self.template_names, **{key: self.data[key] for key in self.data.dtype.names}) 
 
     @classmethod
     def open(cls, filename, time_ref=0.0):
-        file = np.load(filename, allow_pickle=True)
-        return cls.create(file["data"], time_ref=time_ref, templates=file["template_names"])
+        file = np.load(filename)
+
+        names = [name for name in file.keys() if name not in ['template_names']]
+        n = len(file[names[0]])
+
+        obj = cls.create(n,  time_ref=time_ref, template_names=file["template_names"])
+
+        # fill required fields
+        for name, t in obj.required_dtype:
+            if name not in names:
+                raise KeyError(f"File is missing required key '{name}'")
+            obj.data[name] = file[name]
+            names.pop(names.index(name))
+
+        # fill any remaining user-defined fields
+        if len(names):
+            obj.data = numpy.lib.recfunctions.append_fields(
+                obj.data, names, [file[name] for name in names])
+
+        return obj        
 
     @classmethod
-    def create(cls, size, time_ref=0.0, templates=['hard', 'norm', 'soft']):
+    def create(cls, size, time_ref=0.0, template_names=None):
         obj = cls()
-        obj._data = np.empty(size, dtype=obj.dtype)
-        obj._timeref = time_ref
-        obj._template_names = np.asarray(templates)
+        obj.data = np.empty(size, dtype=obj.required_dtype)
+        obj.t0 = time_ref
+        obj.template_names = np.asarray(template_names)
         return obj
 
 
