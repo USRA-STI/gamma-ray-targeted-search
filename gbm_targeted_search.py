@@ -39,7 +39,6 @@ import time
 import utils
 import plots
 
-from data import PhaiiMatrix
 from skymap import O3_DGAUSS_Model, LigoHealPix
 
 from gdt.core.plot.sky import EquatorialPlot
@@ -172,10 +171,10 @@ def main():
     print("re-binning TTE for search")
     # Convert the tte data to binned phaii data using a time range of at least +/-30 seconds
     time_range = np.array([-1, 1]) * max([0.5 * args.search_window_width + args.max_dur + 1.024, 30])
-    data = PhaiiMatrix(tte_data, settings, t0=trigtime.fermi, resolution=settings["min_step"])
-    counts, exposure = data.counts(0, 1.024)
-    print("flat counts", counts)
-    print("flat exposure", exposure)
+    # data = PhaiiMatrix(tte_data, settings, t0=trigtime.fermi, resolution=settings["min_step"])
+    # counts, exposure = data.counts(0, 1.024)
+    # print("flat counts", counts)
+    # print("flat exposure", exposure)
 
     from background import BackgroundMatrix, binned_polynomial
     background = BackgroundMatrix(binned_polynomial, data.phaiis, order=1, time_range=[-30, 30]) 

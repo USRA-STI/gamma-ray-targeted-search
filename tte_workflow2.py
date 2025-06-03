@@ -7,6 +7,8 @@
 #       to download the necessary data files.
 
 import time as unix_time
+from gdt.core.phaii import Phaii
+from gts import getTimeBins
 
 ####################
 # Step 1. SETTINGS #
@@ -53,7 +55,7 @@ from gdt.missions.fermi.gbm.tte import GbmTte
 t0 = 524666469.44569993
 tte_data = []
 for det in track(detectors, description="Opening TTE files"):
-    path = f"glg_tte_{det}_170817_12z_v00.fit.gz"
+    path = f"data/gbm/524666469.429/glg_tte_{det}_170817_12z_v00.fit.gz"
     tte = update_tte_trigtime(GbmTte.open(path), t0)
     tte = tte.rebin_energy(rebin_by_edge_index, channel_edges[det])
     tte_data.append(tte)
@@ -72,6 +74,24 @@ phaiis = DataCollection.from_list(
     ttes.to_phaii(bin_by_time, phaii_resolution, time_ref=0, time_range=time_range),
     names=detectors)
 print("\nPhaii binning took %.1f sec" % (unix_time.time() - clock0))
+
+win_width=60
+search_range = (-win_width / 2.0, win_width / 2.0)
+min_dur=0.064
+max_dur=8.192
+log2maxdur = np.round(np.log2(max_dur))
+log2mindur = np.round(np.log2(min_dur))
+durations = 1.024 * 2. ** np.arange(log2mindur, log2maxdur + 1, 1)
+settings = {}
+settings['win_width']= win_width
+settings['min_dur']  =  min_dur
+settings['max_dur']  =  max_dur
+settings['min_step'] =   0.064
+settings['num_steps']=    8
+
+# print((search_range[0] - durations.max()/2.0, 0))
+tstart = ttes.to_phaii(bin_by_time, phaii_resolution, time_ref=0, time_range=time_range)[0].data.slice_time(search_range[0] - durations.max()/2.0, 0).tstart
+obj = ttes.to_phaii(bin_by_time, phaii_resolution, time_ref=0, time_range=time_range)[0]
 
 data = CountMatrix(phaiis)
 clock0 = unix_time.time()
@@ -157,6 +177,7 @@ geo_azimuth = np.radians(140.38715981849026)
 geo_zenith = np.radians(129.98693857220206)
 geo_radius = np.radians(67.34705159615056)
 earthmask = utils.createEarthMask(skyGrid._points, geo_azimuth, geo_zenith, geo_radius)
+print(earthmask)
 masked_rsp = rsp[:,earthmask,:]
 
 ##################################

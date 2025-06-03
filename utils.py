@@ -38,6 +38,9 @@ import healpy as hp
 from astropy import units as u
 from astropy.coordinates import SkyCoord, angular_separation
 
+from gdt.core.data_primitives import EventList, Gti
+from gdt.core.tte import PhotonList
+
 class SkyGrid():
     """Class to produce an approximate evenly space grid on the sky in
     azimuth and zenith
@@ -180,3 +183,122 @@ def grid2healpix(values, coords, spacecraft_frame, nside_out=64,
         return proj_values, proj_pix, proj_az, proj_zen, proj_ra, proj_dec
     
     return proj_values, proj_pix
+
+
+def update_tte_trigtime(tte, t0):
+    """Updates the trigtime for triggered and continuous TTE files.
+    This is needed to ensure all times are relative to the time of
+    interest, t0.
+
+    Args:
+        tte (PhotonList): time tagged event data derived from PhotonList
+        t0 (float): the time of interest for the targeted search
+
+    Returns:
+        (PhotonList)
+    """
+    if tte.trigtime is None:
+        # continuous TTE case, offset by t0
+        offset = t0
+    else:
+        # trigger TTE case, shift data from trigtime to t0
+        offset = t0 - tte.trigtime
+
+    # event times relative to trigtime
+    data = EventList(tte.data.times - offset,
+                     tte.data.channels, tte.data.ebounds)
+
+    # good time interval bounds relative to trigtime
+    gti_start, gti_stop = np.transpose(tte.gti.as_list()) - offset
+    gti = Gti.from_bounds(gti_start, gti_stop)
+
+    return PhotonList.from_data(data, gti=gti, trigger_time=t0,
+                                event_deadtime=tte.event_deadtime,
+                                overflow_deadtime=tte.overflow_deadtime)
+
+
+def findLocationOfMaxLikelihood(skyGrid, like, spacecraft_frame):
+    """ Calculates the location on the sky that maximizes the likelihood.
+
+    Args:
+        skyGrid (SkyGrid): object defining the detector response coordinates on the sky
+        like (Likelihood): the likelihood method class
+        spacecraft_frame (Frame): frame with spacecraft position information
+
+    Returns:
+        SkyCoord: spacecraft frame coordinates for the location that maximizes the likelihood
+    """
+    # Get the azimuth and zenith of the position that yeilds the maximum marginal likelihood
+    azimuth_max, zenith_max = skyGrid._points[:, like.max_location]
+
+    # Get the RA and Dec of the position that yeilds the maximum marginal likelihood
+    coordinate_max = SkyCoord(azimuth_max, 0.5 * np.pi - zenith_max, frame=spacecraft_frame, unit='rad')
+
+    # return ra_max, dec_max
+    return coordinate_max
+
+
+def skyPrior(grid, spacecraft_frame, small_map_prob=None, skymap=None):
+    """ Calculate the sky prior given a map, or do uniform prior, in the spacecraft frame.
+    The prior is in equatorial, so we need to rotate it to spacecraft.
+
+    Args:
+        grid (np.ndarray): grid of sky locations used in the instrument response
+        spacecraft_frame (Frame): frame object with information about spacecraft position
+        small_map_prob (np.ndarray): use existing small skymap projection when not None
+        skymap (HealPix class): localization probability to use as the prior. Use uniform prior when None.
+
+    Returns:
+        np.ndarray: the sky prior in the spacecraft frame
+    """
+    if small_map_prob is not None:
+
+        # Small map case is already projected into spacecraft coordinates
+        skyprior = small_map_prob
+
+    elif skymap is not None:
+
+        # Get the azimuth and zenith of each unmasked sky grid position
+        azimuth, zenith = grid
+
+        # Get the equivelent RA and Dec of each unmasked sky grid position
+        coords = SkyCoord(azimuth, 0.5 * np.pi - zenith, frame=spacecraft_frame, unit='rad')
+        ra = coords.icrs.ra
+        dec = coords.icrs.dec
+
+        # Calculate the probability of each sky position
+        # For now, do explicit lookup with ang2pix to avoid GDT interpolation of values.
+        # We need to use exact values to ensure consistency between multiorder vs single resolution map formats.
+        ph, th = ra.rad, 0.5 * np.pi - dec.rad
+        pix = hp.ang2pix(skymap.nside, th, ph)
+        skyprior = (skymap.prob / skymap.pixel_area)[pix]
+
+    else:
+        skyprior = np.ones(len(grid[0]), np.float64)
+
+    # Ensure we're normalized to 1
+    skyprior /= skyprior.sum()
+    logskyprior = np.log(np.maximum(1e-100, skyprior))
+
+    return logskyprior
+
+
+def getSunAngle(coordinate_max, t0):
+    """ Calculates the sun angle relative to a location.
+
+    Note: this could probably move to the results class.
+
+    Args:
+        coordinate_max (SkyCoord): location of maximum likelihood
+        t0 (Time): time used to retrieve sun location
+
+    Returns:
+        float: angular separation to the sun in degrees
+    """
+    if t0 is not None:
+        sun_coord = get_sun(t0)
+        sun_angle = sun_coord.separation(coordinate_max)[0]
+    else:
+        sun_angle = None
+
+    return sun_angle

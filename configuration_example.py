@@ -25,25 +25,145 @@
 # License.
 #
 import numpy as np
+import time as unix_time
 
-from configuration import DetectorConfiguration, InstrumentConfiguration, SearchConfiguration
+from rich.progress import track
+
+from configuration import InstrumentConfiguration, SearchConfiguration
+from data import CountMatrix
+from background import BackgroundRatesMatrix
+from formatted_data import InstrumentData, FullInstrumentData
+from response import GBMResponseGenerator
+from search import TargetedScanner
+from results import Results
+from utils import SkyGrid
+import gts
+import utils
+import plots
+from response_fake import FakeResponseGenerator
+
+from gdt.core.collection import DataCollection
+from gdt.core.binning.binned import rebin_by_edge_index
+from gdt.core.binning.unbinned import bin_by_time
+from gdt.core.background.fitter import BackgroundFitter
+from gdt.core.background.binned import Polynomial
+from gdt.core.background.unbinned import NaivePoisson
+from gdt.missions.fermi.gbm.poshist import GbmPosHist
+from gdt.missions.fermi.gbm.tte import GbmTte
 from gdt.missions.fermi.gbm.detectors import GbmDetectors
+
+
 
 nai_edges = [0, 8, 20, 33, 51, 85, 106, 127, 128]
 bgo_edges = [0, 8, 21, 40, 65, 90, 112, 124, 128]
 
-nai_configs = [DetectorConfiguration(nai_edges.copy(), [1, 2, 3, 4, 5, 6]) for det in GbmDetectors.nai()]
-bgo_configs = [DetectorConfiguration(bgo_edges.copy(), [0, 1, 2, 3, 4, 5, 6, 7]) for det in GbmDetectors.bgo()]
-det_configs = nai_configs + bgo_configs
-dets = GbmDetectors.nai() + GbmDetectors.bgo()
-det_names = [det.name for det in dets]
+nai_configs = {det.name: {'channel_edges': nai_edges.copy(), 'search_channels': [1, 2, 3, 4, 5, 6]} for det in GbmDetectors.nai()}
+bgo_configs = {det.name: {'channel_edges': bgo_edges.copy(), 'search_channels': [0, 1, 2, 3, 4, 5, 6, 7]} for det in GbmDetectors.bgo()}
 
-gbm_config = InstrumentConfiguration(det_names, det_configs)
+det_configs = nai_configs | bgo_configs
+gbm_config = InstrumentConfiguration('gbm', det_configs)
+
+t0 = 524666469.44569993
+
 search_settings = SearchConfiguration.build_search_settings()
-search_config = SearchConfiguration(search_settings, 'gbm', ['gbm'], [gbm_config])
+search_settings['win_width'] = 10
+search_config = SearchConfiguration(search_settings, [gbm_config])
 
-search_config.save('test.yaml')
-new_config = SearchConfiguration.open('test.yaml')
-print(new_config.reference_instrument)
-print(new_config.instruments)
-print(new_config.time_range)
+time_range = search_config.time_range
+
+skygrid = utils.SkyGrid(search_config.skygrid_resolution)
+
+########################################################################################################################
+####################################### Getting the data (user responsibility) #########################################
+
+# Load GBM detector and background data, and instrument's spacecraft_frames
+channel_edges = gbm_config.channel_edges
+tte_data = []
+for det in track(gbm_config.detectors, description="Opening TTE files"):
+    path = f"data/gbm/524666469.429/glg_tte_{det}_170817_12z_v00.fit.gz"
+    tte = utils.update_tte_trigtime(GbmTte.open(path), t0)
+    tte = tte.rebin_energy(rebin_by_edge_index, np.array(channel_edges[det]))
+    tte_data.append(tte)
+
+ttes = DataCollection.from_list(tte_data, names=gbm_config.detectors)
+
+phaii_resolution = search_config.min_dur
+clock0 = unix_time.time()
+phaii_list = ttes.to_phaii(bin_by_time, phaii_resolution, time_ref=0, time_range=time_range)
+phaiis = DataCollection.from_list(phaii_list, names=gbm_config.detectors)
+print("\nPhaii binning took %.1f sec" % (unix_time.time() - clock0))
+
+bkgd_fit_ranges = [-30, 30]
+clock0 = unix_time.time()
+backfitters = DataCollection.from_list(
+    [BackgroundFitter.from_phaii(phaii, Polynomial, time_ranges=[bkgd_fit_ranges]) for phaii in phaiis],
+    names=gbm_config.detectors)
+backfitters.fit(order=1)
+print("\nBackground Fit took %.1f sec" % (unix_time.time() - clock0))
+
+#bkgd_range = [-30, 30]
+#backfitters = DataCollection.from_list(
+#    [BackgroundFitter.from_tte(tte.slice_time(bkgd_range), NaivePoisson) for tte in ttes],
+#    names=gbm_config.detectors)
+#backfitters.fit(window_width=125., fast=True)
+
+
+poshist = GbmPosHist.open("data/gbm/524666469.429/glg_poshist_all_170817_v01.fit")
+
+
+##### NOTE: Somewhere in this section, handle time conversion to a coordinated time across instruments
+
+
+########################################################################################################################
+####################################### Creating the search components #################################################
+
+spacecraft_frames = poshist.get_spacecraft_frame()
+
+# Create search data classes
+# counter = CountMatrix(phaiis)
+# background = BackgroundRatesMatrix(backfitters)
+# response = FakeResponseGenerator(spacecraft_frames, t0, skygrid)
+
+response = GBMResponseGenerator(phaiis.items, skygrid, spacecraft_frames, t0, 'templates/GBM')
+
+def goodness_of_fit(counts, background_rates):
+    return np.ones_like(counts[-1], dtype=bool)
+
+backup_fitters = []
+
+gbm_data = FullInstrumentData(phaiis, backfitters, response, spacecraft_frames, goodness_of_fit, backup_fitters)
+search_data = {
+    'gbm': gbm_data
+}
+
+scanner = TargetedScanner(search_data, search_config, skygrid)
+result_inputs = scanner.run_search(t0)
+results = Results.create(len(result_inputs), template_names=["soft", "norm", "hard"])
+for i, result in enumerate(result_inputs):
+    results.data[i] = result
+results.save(".", "results.npz")
+
+opened_results = Results.open("results.npz")
+opened_results.data.sort(order='duration')
+for entry in opened_results.data:
+    print(entry)
+
+
+# results.data = result_inputs
+
+# filtered_results = results.remove_pe()
+# filtered_results = filtered_results.downselect(threshold=search_config.min_loglr, no_empty=True)
+# filtered_results = filtered_results.downselect(combine_spec=False, fixedwin=search_config.win_width)
+# filtered_results.remove_dur_spec(8.192, 'soft')
+#
+# print('\nFound the following {} candidates:'.format(filtered_results.size))
+# filtered_results.write()
+# print('')
+#
+# print(filtered_results.durations)
+# print(filtered_results.templates)
+# print(filtered_results._data.shape)
+#
+#
+# w = plots.Waterfall(results, t0)
+# w.plot_loglr(val_min=3.0)

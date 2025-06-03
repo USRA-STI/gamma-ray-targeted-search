@@ -27,74 +27,7 @@
 import os
 import yaml
 import numpy as np
-
-class DetectorConfiguration():
-    """Class for the detector configuration
-
-        Attributes:
-        -----------
-        channel_edges: list
-            Values for the energy bin edges to be searched
-        search_channels: list
-            Indices of channels to be searched
-
-        Public Methods:
-        ---------------
-        save:
-            Save the Results to a yaml file
-        to_dict:
-            Convert the DetectorConfiguration to a pure dictionary
-
-        Class Methods:
-        ---------------
-        create:
-            Create a DetectorConfiguration object given a valid set of input parameters
-        open:
-            Open an existing configuration object in a .yaml file
-        """
-    def __init__(self, channel_edges, search_channels):
-        self.channel_edges = channel_edges
-        self.search_channels = search_channels
-
-
-    def to_dict(self):
-        return {
-            'channel_edges': self.channel_edges,
-            'search_channels': self.search_channels
-        }
-
-
-    def save(self, output_file):
-        as_dict = self.to_dict()
-        with open(output_file, 'w') as file:
-            yaml.dump(as_dict, file)
-
-
-    @classmethod
-    def create(cls, detector_config):
-        if not 'channel_edges' in detector_config:
-            raise KeyError(f"Missing required configuration key: channel_edges")
-        if not 'search_channels' in detector_config:
-            raise KeyError(f"Missing required configuration key: search_channels")
-        return cls(detector_config['channel_edges'], detector_config['search_channels'])
-
-
-    @classmethod
-    def open(cls, config_file):
-        if not os.path.isfile(config_file):
-            raise FileNotFoundError(f"No such file: '{config_file}'")
-        with open(config_file, 'r') as file:
-            detector_config = yaml.safe_load(file)
-            if not 'channel_edges' in detector_config:
-                raise KeyError(f"Missing required configuration key: channel_edges")
-            if not 'search_channels' in detector_config:
-                raise KeyError(f"Missing required configuration key: search_channels")
-            return cls(detector_config['channel_edges'], detector_config['search_channels'])
-
-
-    def __getattr__(self, item):
-        if item == 'channel_mask':
-            return [channel in self.search_channels for channel in range(len(self.channel_edges) - 1)]
+import warnings
 
 
 class InstrumentConfiguration():
@@ -106,13 +39,15 @@ class InstrumentConfiguration():
             Dictionary with keys being the detector names and values being the detector's corresponding configuration
         detectors: list
             Names of detectors from keys in detector_configs
+        name: str
+            Instrument name
 
         Public Methods:
         ---------------
         save:
             Save the configuration to a yaml file
         add_detector:
-            Add a new detector and corresponding DetectorConfiguration
+            Add a new detector and corresponding configuration
         to_dict:
             Convert the InstrumentConfiguration to a pure dictionary
 
@@ -126,21 +61,26 @@ class InstrumentConfiguration():
             Create an InstrumentConfiguration object given a valid YAML file with detectors and corresponding
             configurations
         """
-    def __init__(self, detectors=None, detector_configs=None):
+    def __init__(self, instrument_name=None, detector_configs=None):
         self.detector_configs = {}
-        if detectors and detector_configs:
-            if(len(detectors) == len(detector_configs)):
-                for detector, detector_config in zip(detectors, detector_configs):
-                    if not isinstance(detector, str):
-                        raise ValueError(f"Detector is not of type string. Please check your inputs.")
-                    self.detector_configs[detector] = detector_config
-            else:
-                raise ValueError(f"Length mismatch: {len(detectors)} != {len(detector_configs)}")
+        if detector_configs and isinstance(detector_configs, dict):
+            for detector, detector_config in detector_configs.items():
+                if not isinstance(detector, str):
+                    raise ValueError(f"Detector name is not of type string. Please check your inputs.")
+                try:
+                    self._validate_detector_config(detector_config)
+                except:
+                    raise ValueError(f"Detector {detector} config not valid. Please ensure necessary keys and"
+                                     f"values are properly configured.")
+                self.detector_configs[detector] = detector_config
+        if instrument_name and isinstance(instrument_name, str):
+            self.name = instrument_name
+        else:
+            raise ValueError(f"Instrument must have an assigned name of type string for reference")
 
 
     def add_detector(self, detector_name, detector_config):
-        if not isinstance(detector_config, DetectorConfiguration):
-            raise ValueError(f"Input detector configuration must be of type DetectorConfiguration")
+        self._validate_detector_config(detector_config)
         self.detector_configs[detector_name] = detector_config
 
 
@@ -165,10 +105,7 @@ class InstrumentConfiguration():
             raise KeyError(f"Missing required configuration key: detector_configs")
         for detector in instrument_config['detector_configs']:
             detector_config = instrument_config['detector_configs'][detector]
-            if isinstance(detector_config, DetectorConfiguration):
-                configured_instrument.add_detector(detector, detector_config)
-            if isinstance(detector_config, dict):
-                configured_instrument.add_detector(detector, DetectorConfiguration.create(detector_config))
+            configured_instrument.add_detector(detector, detector_config)
         return configured_instrument
 
 
@@ -185,15 +122,38 @@ class InstrumentConfiguration():
                     configured_instrument.add_detector(det, DetectorConfiguration.create(detector_configs[det]))
                 return configured_instrument
 
+
     def __getattr__(self, item):
         if item == 'detectors':
             return list(self.detector_configs.keys())
         if item == 'channel_mask':
-            return np.ravel([self.detector_configs[det].channel_mask for det in self.detectors])
+            return np.ravel([self._get_detector_channel_mask(det) for det in self.detectors])
         if item == 'search_channels':
-            return { det: self.detector_configs[det].search_channels for det in self.detectors }
+            return { det: self.detector_configs[det]['search_channels'] for det in self.detectors }
         if item == 'channel_edges':
-            return { det: self.detector_configs[det].channel_edges for det in self.detectors }
+            return { det: self.detector_configs[det]['channel_edges'] for det in self.detectors }
+        if item == 'name':
+            return self.name
+
+
+    def _validate_detector_config(self, detector_config):
+        if not isinstance(detector_config, dict):
+            raise ValueError(f"Input detector configuration must be a dictionary")
+        if 'channel_edges' not in detector_config or not isinstance(detector_config['channel_edges'], list):
+            raise ValueError(f"Input detector configuration must contain a key channel_edges with a value of type list")
+        if 'search_channels' not in detector_config or not isinstance(detector_config['search_channels'], list):
+            raise ValueError(f"Input detector configuration must contain a key search_channels with a value of type list")
+
+
+    def _get_detector_channel_mask(self, detector):
+        if detector not in self.detector_configs:
+            raise ValueError(f"Requested detector is not in instrument's detector configurations")
+        else:
+            config = self.detector_configs[detector]
+            search_channels = config['search_channels']
+            channel_edges = config['channel_edges']
+
+            return [channel in search_channels for channel in range(len(channel_edges) - 1)]
 
 
 class SearchConfiguration():
@@ -232,25 +192,27 @@ class SearchConfiguration():
         validate_search_settings:
             Return if the given search_settings dictionary contains the necessary keys
         """
-    def __init__(self, search_settings, reference_instrument='', instruments=None, instrument_configs=None):
+    def __init__(self, search_settings, instrument_configs=None):
         self.instrument_configs = {}
-        if instruments and instrument_configs:
-            if(len(instruments) == len(instrument_configs)):
-                for instrument, instrument_config in zip(instruments, instrument_configs):
-                    self.instrument_configs[instrument] = instrument_config
-            else:
-                raise ValueError(f"Length mismatch: {len(instruments)} != {len(instrument_configs)}")
+        if len(instrument_configs):
+            self.instrument_configs = instrument_configs
+        else:
+            raise ValueError(f"There must be at least one instrument assigned to this search tool.")
         if self.validate_search_settings(search_settings):
             self.search_settings = search_settings
         else:
             raise ValueError(f"One of the required search_settings parameters has not been set")
-        self.reference_instrument = reference_instrument
 
 
-    def add_instrument(self, instrument, instrument_config):
+    def add_instrument(self, instrument_config):
         if not isinstance(instrument_config, InstrumentConfiguration):
             raise ValueError(f"Input instrument configuration must be of type InstrumentConfiguration")
-        self.instrument_configs[instrument] = instrument_config
+        i = self._get_existing_index(instrument_config.name)
+        if i:
+            self.instrument_configs[i] = instrument_config
+            warnings.warn(f"Existing configuration replaced for {instrument_config.name}")
+        else:
+            self.instrument_configs.append(instrument_config)
 
 
     def to_dict(self):
@@ -357,6 +319,21 @@ class SearchConfiguration():
                'skygrid_resolution' in search_settings and isinstance(search_settings['skygrid_resolution'], int)
 
 
+    def get_instrument_config(self, instrument_name):
+        i = self._get_existing_index(instrument_name)
+        if i is not None:
+            return self.instrument_configs[i]
+        else:
+            raise KeyError(f"Key {instrument_name} does not exist in instrument configs")
+
+
+    def _get_existing_index(self, instrument_name):
+        for i, config in enumerate(self.instrument_configs):
+            if config.name == instrument_name:
+                return i
+        return None
+
+
     def __getattr__(self, item):
         if item == 'instruments':
             return list(self.instrument_configs.keys())
@@ -366,3 +343,5 @@ class SearchConfiguration():
             return np.array([-1, 1]) * max([0.5 * win_width + max_dur + 1.024, 30])
         if item in self.search_settings.keys():
             return self.search_settings[item]
+        if item == 'reference_instrument':
+            return self.instrument_configs[0].name

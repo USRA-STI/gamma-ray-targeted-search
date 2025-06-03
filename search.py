@@ -25,6 +25,7 @@
 # License.
 #
 from likelihood import Likelihood
+import utils
 
 from gdt.core.phaii import Phaii
 from gdt.missions.fermi.time import Time
@@ -33,173 +34,6 @@ import numpy as np
 
 from astropy.coordinates import get_sun, SkyCoord
 
-
-# TODO Remove from search
-def findLocationOfMaxLikelihood(skyGrid, like, spacecraft_frame):
-    """ Calculates the location on the sky that maximizes the likelihood.
-
-    Args:
-        skyGrid (SkyGrid): object defining the detector response coordinates on the sky
-        like (Likelihood): the likelihood method class
-        spacecraft_frame (Frame): frame with spacecraft position information
-
-    Returns:
-        SkyCoord: spacecraft frame coordinates for the location that maximizes the likelihood
-    """
-    # Get the azimuth and zenith of the position that yeilds the maximum marginal likelihood
-    azimuth_max, zenith_max = skyGrid._points[:, like.max_location]
-
-    # Get the RA and Dec of the position that yeilds the maximum marginal likelihood
-    coordinate_max = SkyCoord(azimuth_max, 0.5 * np.pi - zenith_max, frame=spacecraft_frame, unit='rad')
-
-    # return ra_max, dec_max
-    return coordinate_max
-
-
-# TODO Remove from search
-def calculateSnr(counts, background, min_channel=0, max_channel=-1):
-    """ Method for calculated the top two signal-to-noise ratios from all detectors.
-    Computed using a Gaussian approximation.
-
-    Note: this should move to the results or filter class. Not used in search.
-
-    Args:
-        counts (np.ndarray): counts in each detector
-        background (np.ndarray): background in each detector
-        min_channel (int): minimum energy bin index to sum
-        max_channel (int): maximum energy bin index to sum
-
-    Returns:
-        (float, float): tuple with the highest & second highest signal-to-noise ratios from all detectors
-    """
-
-    counts = counts.reshape(-1, 14)
-    background = background.reshape(-1, 14)
-
-    # Calculate the signal to noise ratio (SNR)
-    snr = (counts[min_channel:max_channel,:] - background[min_channel:max_channel,:]).sum(axis=0) / \
-              np.sqrt(background[min_channel:max_channel,:].sum(axis=0))
-
-    # Get the inndividual detector SNR and top 2 SNR measurements
-    snr1, snr0 = np.sort(snr)[-2:]
-
-    return (snr1, snr0)
-
-# TODO Remove from search
-def getSunAngle(coordinate_max, t0):
-    """ Calculates the sun angle relative to a location.
-
-    Note: this could probably move to the results class.
-
-    Args:
-        coordinate_max (SkyCoord): location of maximum likelihood
-        t0 (Time): time used to retrieve sun location
-
-    Returns:
-        float: angular separation to the sun in degrees
-    """
-    if t0 is not None:
-        sun_coord = get_sun(t0)
-        sun_angle = sun_coord.separation(coordinate_max)[0]
-    else:
-        sun_angle = None
-
-    return sun_angle
-
-
-# TODO Remove from search
-def phosphorescenceVeto(counts, background, background_error):
-    """Get statistics for cosmic-ray post-veto
-
-    Phosphorescence events should be:
-        1) isolated to one detector,
-        2) soft primarily channel 0
-
-    Therefore we calculate the signal-to-noise ratio (SNR) for each channel in each detector
-    and compare the SNR of channel 0 and 1 in the detector that yeilds the max signal
-
-    Note: this should move to the results or filter class. Not used in search.
-
-    Args:
-        counts (np.ndarray): counts in each detector
-        background (np.ndarray): background in each detector
-        min_channel (int): minimum energy bin index to sum
-        max_channel (int): maximum energy bin index to sum
-
-    Returns:
-        (float, float, float): tuple with (highest channel 0 SNR,
-                               second highest channel 0 SNR,
-                               channel 1 SNR for detector with highest channel 0 SNR)
-    """
-
-    counts = counts.reshape(-1, 14)
-    background = background.reshape(-1, 14)
-    background_error = background_error.reshape(-1, 14)
-
-    # Calculate the signal to noise ratio for each channel in each detectors
-    snr = (counts-background)/np.sqrt(background+background_error)
-
-    # Top 2 detectors for low channel signal to noise ratio
-    (i, j) = np.argsort(snr[0, :])[-2:]
-
-    # SNR of max detector channel 0,
-    pe_veto1 = snr[0, j]
-    #
-    # ratio of max chan0 to next-max,
-    pe_veto2 = snr[0, i]
-
-    # ratio of chan0 to chan1
-    pe_veto3 = snr[1, j]
-
-    # Package it all up
-    pe_veto = (pe_veto1, pe_veto2, pe_veto3)
-
-    return pe_veto
-
-
-def skyPrior(grid, spacecraft_frame, small_map_prob=None, skymap=None):
-    """ Calculate the sky prior given a map, or do uniform prior, in the spacecraft frame.
-    The prior is in equatorial, so we need to rotate it to spacecraft.
-
-    Args:
-        grid (np.ndarray): grid of sky locations used in the instrument response
-        spacecraft_frame (Frame): frame object with information about spacecraft position
-        small_map_prob (np.ndarray): use existing small skymap projection when not None
-        skymap (HealPix class): localization probability to use as the prior. Use uniform prior when None.
-
-    Returns:
-        np.ndarray: the sky prior in the spacecraft frame
-    """
-    if small_map_prob is not None:
-
-        # Small map case is already projected into spacecraft coordinates
-        skyprior = small_map_prob
-
-    elif skymap is not None:
-
-        # Get the azimuth and zenith of each unmasked sky grid position
-        azimuth, zenith = grid
-
-        # Get the equivelent RA and Dec of each unmasked sky grid position
-        coords = SkyCoord(azimuth, 0.5 * np.pi - zenith, frame=spacecraft_frame, unit='rad')
-        ra = coords.icrs.ra
-        dec = coords.icrs.dec
-
-        # Calculate the probability of each sky position
-        # For now, do explicit lookup with ang2pix to avoid GDT interpolation of values.
-        # We need to use exact values to ensure consistency between multiorder vs single resolution map formats.
-        ph, th = ra.rad, 0.5 * np.pi - dec.rad
-        pix = hp.ang2pix(skymap.nside, th, ph)
-        skyprior = (skymap.prob / skymap.pixel_area)[pix]
-
-    else:
-        skyprior = np.ones(len(grid[0]), np.float64)
-
-    # Ensure we're normalized to 1
-    skyprior /= skyprior.sum()
-    logskyprior = np.log(np.maximum(1e-100, skyprior))
-
-    return logskyprior
 
 
 class TargetedScanner():
@@ -221,7 +55,7 @@ class TargetedScanner():
 
     def get_bin_starts(self, search_range, durations):
         reference_instrument = self.search_configuration.reference_instrument
-        reference_data = self.instrument_data[reference_instrument].counter.data
+        reference_data = self.instrument_data[reference_instrument].data
 
         tstart = None
         tend = None
@@ -322,10 +156,6 @@ class TargetedScanner():
                 bkgd_rates, bkgd_variance, good = instrument_data.background_rates(tstart, tstop, exposure)
                 # TODO Stack counts, backgrounds across all Skygrid positions
 
-                # TODO Remove from search
-                snr = calculateSnr(counts, bkgd_rates)
-                pe_veto = phosphorescenceVeto(counts, bkgd_rates, bkgd_variance)
-
                 # Get full skygrid, templates response
                 response, earthmask = instrument_data.load_response(tstart, tstop, self.skygrid)
                 # What if instrument response skygrid != search skygrid?
@@ -374,22 +204,22 @@ class TargetedScanner():
         # TODO Remove all following definitions from search
         tcenter = tstart + duration / 2.0
 
-        coords_max = findLocationOfMaxLikelihood(self.skygrid, like, reference_frame)
+        # TODO Move to Likelihoood class?
+        coords_max = utils.findLocationOfMaxLikelihood(self.skygrid, like, reference_frame)
         # convert to degrees for results storage
         ra_max = coords_max.icrs.ra[0].deg
         dec_max = coords_max.icrs.dec[0].deg
-        azimuth_max = coords_max.az.deg
-        zenith_max = 90.0 - coords_max.el.deg
+        # azimuth_max = coords_max.az.deg
+        # zenith_max = 90.0 - coords_max.el.deg
 
-        sun_angle = getSunAngle(coords_max, Time(t0, format='fermi'))
-        geo_angle = reference_frame.geocenter.separation(coords_max)[0]
+        # sun_angle = utils.getSunAngle(coords_max, Time(t0, format='fermi'))
+        # geo_angle = reference_frame.geocenter.separation(coords_max)[0]
 
-        log_sky_prior = skyPrior(self.skygrid._points[:,earthmask], reference_frame, None, None)
+        log_sky_prior = utils.skyPrior(self.skygrid._points[:,earthmask], reference_frame, None, None)
         coinclr = like.coinclr(log_sky_prior, llratio=like.llr)
 
-        result = [tcenter, duration, 1, 0, like.status, azimuth_max, zenith_max, ra_max, dec_max, like.max_template,
-                  like.photon_fluence/duration, like.optimal_snr, *snr, *like.chisq, sun_angle.deg, geo_angle.deg,
-                  like.marginal_llr, coinclr, *pe_veto]
+        result = (tcenter, duration, ra_max, dec_max, like.max_template, like.photon_fluence/duration, *like.chisq,
+                  like.marginal_llr, coinclr)
 
         return result
 
@@ -398,15 +228,15 @@ class TargetedScanner():
         timebins = self.get_timebins(t0)
         results = []
         for (tstart, dur) in timebins:
-            like = self.calculate_timebin_likelihood(tstart, tstart + dur, t0)
-            results.append(like)
+            result = self.calculate_timebin_likelihood(tstart, tstart + dur, t0)
+            results.append(result)
 
-        return np.array(results)
+        return results
 
 
     def _align_timebins(self, timebins):
         reference_instrument = self.search_configuration.reference_instrument
-        reference_data = self.instrument_data[reference_instrument].counter.data
+        reference_data = self.instrument_data[reference_instrument].data
 
         for i, (bin, dur) in enumerate(timebins):
             new_bin = None
