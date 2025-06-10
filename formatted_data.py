@@ -23,7 +23,7 @@ class FullInstrumentData:
             if not match_ebounds:
                 print("Warning: Energy bounds do not match across input data and backfitters. Please check to ensure "
                       "inputs are valid.")
-g
+
         self.data = data
         self.fitters = fitters
         self.response_generator = response_generator
