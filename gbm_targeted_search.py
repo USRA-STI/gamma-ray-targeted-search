@@ -176,10 +176,6 @@ def main():
     # print("flat counts", counts)
     # print("flat exposure", exposure)
 
-    from background import BackgroundMatrix, binned_polynomial
-    background = BackgroundMatrix(binned_polynomial, data.phaiis, order=1, time_range=[-30, 30]) 
-    exit(0) 
-
     # bin data
     pha2_data = data.bin()
     

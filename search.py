@@ -25,7 +25,7 @@
 # License.
 #
 from likelihood import Likelihood
-from formatted_data import FullInstrumentData
+from data import InstrumentData
 import utils
 
 from gdt.core.phaii import Phaii
@@ -56,7 +56,7 @@ class TargetedScanner():
 
 
     def add_instrument(self, name, data, fitters, response_generator, frames, fit_checker, backup_fitters):
-        self.instrument_data[name] = FullInstrumentData(data, fitters, response_generator, frames, fit_checker, backup_fitters)
+        self.instrument_data[name] = InstrumentData(data, fitters, response_generator, frames, fit_checker, backup_fitters)
 
 
     def get_bin_starts(self, search_range, durations):

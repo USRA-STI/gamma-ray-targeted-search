@@ -30,17 +30,14 @@ import time as unix_time
 from rich.progress import track
 
 from configuration import InstrumentConfiguration, SearchConfiguration
-from data import CountMatrix
-from background import BackgroundRatesMatrix
-from formatted_data import FullInstrumentData
 from response import GBMResponseGenerator
 from search import TargetedScanner
 from results import Results
 from utils import SkyGrid
+
 import gts
 import utils
 import plots
-from response_fake import FakeResponseGenerator
 
 from gdt.core.collection import DataCollection
 from gdt.core.binning.binned import rebin_by_edge_index
