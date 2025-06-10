@@ -25,6 +25,7 @@
 # License.
 #
 from likelihood import Likelihood
+from formatted_data import FullInstrumentData
 import utils
 
 from gdt.core.phaii import Phaii
@@ -48,10 +49,15 @@ class TargetedScanner():
         Class Methods:
         ---------------
         """
-    def __init__(self, instrument_data, search_configuration, skygrid):
-        self.instrument_data = instrument_data
+    def __init__(self, search_configuration, skygrid):
         self.search_configuration = search_configuration
         self.skygrid = skygrid
+        self.instrument_data = {}
+
+
+    def add_instrument(self, name, data, fitters, response_generator, frames, fit_checker, backup_fitters):
+        self.instrument_data[name] = FullInstrumentData(data, fitters, response_generator, frames, fit_checker, backup_fitters)
+
 
     def get_bin_starts(self, search_range, durations):
         reference_instrument = self.search_configuration.reference_instrument
@@ -136,69 +142,31 @@ class TargetedScanner():
 
     def calculate_timebin_likelihood(self, tstart, tstop, t0):
         # Note: Where to store n_templates? energybins?
-        n_templates = 3
-        n_energybins = 8
+        shape_data = {
+            "n_templates": 3,
+            "n_energybins": 8,
+            "num_sky_positions": self.skygrid.size
+        }
 
         duration = tstop - tstart
 
         reference_instrument = self.search_configuration.reference_instrument
         reference_frame = self.instrument_data[reference_instrument].get_spacecraft_frame((tstart + tstop) / 2)
         outputs = {}
-        num_sky_positions = self.skygrid.size
+
         for instrument in self.instrument_data.keys():
             instrument_data = self.instrument_data[instrument]
             instrument_config = self.search_configuration.get_instrument_config(instrument)
             if instrument == reference_instrument:
-                channel_mask = instrument_config.channel_mask
-
-                counts, exposure = instrument_data.counts(tstart, tstop)
-
-                bkgd_rates, bkgd_variance, good = instrument_data.background_rates(tstart, tstop, exposure)
-                # TODO Stack counts, backgrounds across all Skygrid positions
-
-                # Get full skygrid, templates response
-                response, earthmask = instrument_data.load_response(tstart, tstop, self.skygrid)
-                # What if instrument response skygrid != search skygrid?
-                rsp_templates, n_skygrid, _, _ = response.shape
-
-                rsp = response.reshape(n_templates, n_skygrid, -1)
-                rsp = rsp[:, earthmask, :]
-
-                mask = channel_mask & good
-
-                outputs[instrument] = {
-                    'counts': counts[mask],
-                    'background_rates': bkgd_rates[mask],
-                    'background_variance': bkgd_variance[mask],
-                    'response': rsp[:, :, mask]
-                }
+                outputs[instrument] = instrument_data.format_data(instrument_config, tstart, tstop,
+                                                                  self.skygrid, shape_data)
             else:
-                n_detectors = len(instrument_config.detectors)
-                skygrid_counts = np.zeros(n_templates, num_sky_positions, n_energybins, n_detectors)
-                skygrid_background = np.zeros(n_templates, num_sky_positions, n_energybins, n_detectors)
-                skygrid_background_variance = np.zeros(n_templates, num_sky_positions, n_energybins, n_detectors)
-                response = np.zeros(n_templates, num_sky_positions, n_energybins, n_detectors)
-
-                for i, skypos in enumerate(self.skygrid._points.T):
-                    offset = instrument_data.get_timebin_offset(reference_frame, skypos)
-                    counts, exposure = instrument_data.counts(tstart + offset, tstop + offset)
-                    bkgd_rates, bkgd_variance = instrument_data.background_rates(tstart + offset, tstop + offset, exposure)
-                    # This should return a matrix for each template, energy bin, and detector given a specific skypos
-                    skypos_response = instrument_data.load_skypos_response(tstart, tstop, skypos, reference_frame)
-                    # TODO reproject outputs to match reference
-
-                    # TODO Assign all values to the skygrid matrix representation
-
-                outputs[instrument] = {
-                    'counts': skygrid_counts,
-                    'background_rates': skygrid_background,
-                    'background_variance': skygrid_background_variance,
-                    'response': response
-                }
+                outputs[instrument] = instrument_data.format_data_by_reference(instrument_config, tstart, tstop,
+                                                                               reference_frame, self.skygrid, shape_data)
 
         counts, bkgd_counts, bkgd_variance, response = self.stack_instrument_outputs(outputs)
 
-        like = Likelihood(n_templates, self.skygrid.size)
+        like = Likelihood(shape_data['n_templates'], self.skygrid.size)
         like.calculate(counts, bkgd_counts, bkgd_variance, response)
 
         # TODO Remove all following definitions from search
@@ -215,6 +183,10 @@ class TargetedScanner():
         # sun_angle = utils.getSunAngle(coords_max, Time(t0, format='fermi'))
         # geo_angle = reference_frame.geocenter.separation(coords_max)[0]
 
+        # TODO This function relies on single-instrument context; earthmas for multi-instrument search would need to be
+        # generated or composed.
+        # HACK
+        _, earthmask = instrument_data.load_response(tstart, tstop, self.skygrid)
         log_sky_prior = utils.skyPrior(self.skygrid._points[:,earthmask], reference_frame, None, None)
         coinclr = like.coinclr(log_sky_prior, llratio=like.llr)
 

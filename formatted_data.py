@@ -5,69 +5,6 @@ import numpy as np
 import os
 
 
-
-
-class InstrumentData:
-    """Class for storing necessary data components for targeted search, for a single instrument.
-    """
-    def __init__(self, counter, background_counter, response_generator, spacecraft_frames):
-        """Constructor"""
-        self.counter = counter
-        self.background_counter = background_counter
-        self.response_generator = response_generator
-        self.spacecraft_frames = spacecraft_frames
-
-
-    # For reference instrument, counts will be computed as is from CountMatrix. For additional instruments, an offset
-    # to the time bin will be required relative to the reference instrument, for each target sky position we compute
-    #
-    # Options: Calculate offset within this function
-    #          Calculate offset externally, application of offset handled by higher-level search utility/function
-    def counts(self, tstart: float, tstop: float, reference_frame=None):
-        return self.counter.counts(tstart, tstop)
-
-    # For reference instrument, background will be computed as is from BackgroundRatesMatrix. Otherwise, an offset
-    # to the time bin will be required relative to the reference instrument, for each target sky position we compute
-    #
-    # Options: Calculate offset within this function
-    #          Calculate offset externally, application of offset handled by higher-level search utility/function
-    def background_rates(self, tstart: float, tstop: float, exposure, reference_frame=None):
-        return self.background_counter.counts(tstart, tstop, exposure)
-
-
-    # response[i, :, :, :] -> Response array for a specific template
-    # response[:, i, :, :] -> Response array for a specific sky position
-    # response[:, :, i, :] -> Response array for a specific energy bin
-    # response[:, :, :, i] -> Response array for a specific detector
-    # When combining instrument data, stack response matrix across the 3rd axis to add new detector responses from
-    # additional instrument. Projection from additional instrument to reference instrument skygrid will be required
-    #
-    # Will the response need to be generated per skypos, given that for each skypos, the relative path of the energy
-    # waves to the target instrument is different and would use a different spacecraft_frame?
-    def load_response(self, tstart, tstop, skygrid, earthmask=False):
-        # Note: Can this function take just the spacecraft frame itself rather than calculating it
-        return self.response_generator.load_response(tstart, tstop)
-
-
-    def load_skypos_response(self, tstart, tstop, target_skypos, reference_frame, earthmask=False):
-        # Note: Can this function take just the spacecraft frame itself rather than calculating it
-        pass
-
-
-    def get_spacecraft_frame(self, time):
-        frame_index = np.abs(self.spacecraft_frames.obstime.value - time).argmin()
-        spacecraft_frame = self.spacecraft_frames[frame_index]
-
-        return spacecraft_frame
-
-
-    def get_timebin_offset(self, reference_frame, target_skypos):
-        # Calculate offset based on target sky pos, reference_frame, finding the frame in this instance's frames that
-        # would correspond to when the energy beam would reach this instrument
-        # Return a float representing the timebin offset, along with the spacecraft frame associated with it.
-        pass
-
-
 class FullInstrumentData:
     """Class for storing necessary data components for targeted search, for a single instrument."""
 
@@ -86,7 +23,7 @@ class FullInstrumentData:
             if not match_ebounds:
                 print("Warning: Energy bounds do not match across input data and backfitters. Please check to ensure "
                       "inputs are valid.")
-
+g
         self.data = data
         self.fitters = fitters
         self.response_generator = response_generator
@@ -150,3 +87,61 @@ class FullInstrumentData:
         # would correspond to when the energy beam would reach this instrument
         # Return a float representing the timebin offset, along with the spacecraft frame associated with it.
         pass
+
+
+    def format_data(self, instrument_config, tstart, tstop, skygrid, shape_data):
+        n_templates = shape_data['n_templates']
+
+        channel_mask = instrument_config.channel_mask
+        counts, exposure = self.counts(tstart, tstop)
+
+        bkgd_rates, bkgd_variance, good = self.background_rates(tstart, tstop, exposure)
+        # TODO Stack counts, backgrounds across all Skygrid positions
+
+        # Get full skygrid, templates response
+        response, earthmask = self.load_response(tstart, tstop, skygrid)
+        # What if instrument response skygrid != search skygrid?
+        rsp_templates, n_skygrid, _, _ = response.shape
+
+        # NOTE: Why get n_skygrid from response, when n_templates is static, and n_skygrid can be grabbed from
+        # scanner's skygrid attribute?
+        rsp = response.reshape(n_templates, n_skygrid, -1)
+        rsp = rsp[:, earthmask, :]
+
+        mask = channel_mask & good
+
+        return {
+            'counts': counts[mask],
+            'background_rates': bkgd_rates[mask],
+            'background_variance': bkgd_variance[mask],
+            'response': rsp[:, :, mask]
+        }
+
+
+    def format_data_by_reference(self, instrument_config, tstart, tstop, reference_frame, skygrid, shape_data):
+        n_templates = shape_data['n_templates']
+        num_sky_positions = shape_data['num_sky_positions']
+        n_energybins = shape_data['n_energybins']
+
+        n_detectors = len(instrument_config.detectors)
+        skygrid_counts = np.zeros(n_templates, num_sky_positions, n_energybins, n_detectors)
+        skygrid_background = np.zeros(n_templates, num_sky_positions, n_energybins, n_detectors)
+        skygrid_background_variance = np.zeros(n_templates, num_sky_positions, n_energybins, n_detectors)
+        response = np.zeros(n_templates, num_sky_positions, n_energybins, n_detectors)
+
+        for i, skypos in enumerate(skygrid._points.T):
+            offset = self.get_timebin_offset(reference_frame, skypos)
+            counts, exposure = self.counts(tstart + offset, tstop + offset)
+            bkgd_rates, bkgd_variance = self.background_rates(tstart + offset, tstop + offset, exposure)
+            # This should return a matrix for each template, energy bin, and detector given a specific skypos
+            skypos_response = self.load_skypos_response(tstart, tstop, skypos, reference_frame)
+            # TODO reproject outputs to match reference
+
+            # TODO Assign all values to the skygrid matrix representation
+
+        return {
+            'counts': skygrid_counts,
+            'background_rates': skygrid_background,
+            'background_variance': skygrid_background_variance,
+            'response': response
+        }

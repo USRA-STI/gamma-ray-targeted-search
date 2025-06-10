@@ -32,7 +32,7 @@ from rich.progress import track
 from configuration import InstrumentConfiguration, SearchConfiguration
 from data import CountMatrix
 from background import BackgroundRatesMatrix
-from formatted_data import InstrumentData, FullInstrumentData
+from formatted_data import FullInstrumentData
 from response import GBMResponseGenerator
 from search import TargetedScanner
 from results import Results
@@ -119,11 +119,6 @@ poshist = GbmPosHist.open("data/gbm/524666469.429/glg_poshist_all_170817_v01.fit
 
 spacecraft_frames = poshist.get_spacecraft_frame()
 
-# Create search data classes
-# counter = CountMatrix(phaiis)
-# background = BackgroundRatesMatrix(backfitters)
-# response = FakeResponseGenerator(spacecraft_frames, t0, skygrid)
-
 response = GBMResponseGenerator(phaiis.items, skygrid, spacecraft_frames, t0, 'templates/GBM')
 
 def goodness_of_fit(counts, background_rates):
@@ -131,12 +126,9 @@ def goodness_of_fit(counts, background_rates):
 
 backup_fitters = []
 
-gbm_data = FullInstrumentData(phaiis, backfitters, response, spacecraft_frames, goodness_of_fit, backup_fitters)
-search_data = {
-    'gbm': gbm_data
-}
+scanner = TargetedScanner(search_config, skygrid)
+scanner.add_instrument('gbm', phaiis, backfitters, response, spacecraft_frames, goodness_of_fit, backup_fitters)
 
-scanner = TargetedScanner(search_data, search_config, skygrid)
 result_inputs = scanner.run_search(t0)
 results = Results.create(len(result_inputs), template_names=["soft", "norm", "hard"])
 for i, result in enumerate(result_inputs):
