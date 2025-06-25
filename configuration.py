@@ -41,6 +41,13 @@ class InstrumentConfiguration():
             Names of detectors from keys in detector_configs
         name: str
             Instrument name
+        channel_mask: ndarray
+            Array representing valid channels for each detector according to search criteria
+        search_channels: dict
+            Dict where keys are detector names and values are the search channels to be used for that detector
+        channel_edges: dict
+            Dict where keys are detector names and values are the channel edges for each detector
+
 
         Public Methods:
         ---------------
@@ -62,6 +69,16 @@ class InstrumentConfiguration():
             configurations
         """
     def __init__(self, instrument_name=None, detector_configs=None):
+        """ Class constructor
+        Args:
+            instrument_name (str): Instrument name
+            detector_configs (dict): Dictionary representing the configuration for each detector. Keys are detector names
+                and values are detector configurations. Each detector should have set at minimum the channel edges and
+                the search channels to be used
+
+        Returns:
+            None
+        """
         self.detector_configs = {}
         if detector_configs and isinstance(detector_configs, dict):
             for detector, detector_config in detector_configs.items():
@@ -80,11 +97,29 @@ class InstrumentConfiguration():
 
 
     def add_detector(self, detector_name, detector_config):
+        """Add a new detector configuration
+
+        Args:
+            detector_name (str): Detector name
+            detector_config (dict): Dictionary representing the configuration for this detector. Must contain keys for
+                channel_edges and search_channels
+
+        Returns:
+            None
+        """
         self._validate_detector_config(detector_config)
         self.detector_configs[detector_name] = detector_config
 
 
     def to_dict(self):
+        """Convert the InstrumentConfiguration to a pure dictionary
+
+        Args:
+            None
+
+        Returns:
+            (dict): Dictionary with all the individual detectors' configurations stored (nested)
+        """
         detector_config_dict = {}
         for detector in self.detectors:
             detector_config_dict[detector] = self.detector_configs[detector].to_dict()
@@ -93,6 +128,14 @@ class InstrumentConfiguration():
 
 
     def save(self, output_file):
+        """Save the instrument configuration to a file
+
+        Args:
+            output_file (str): Path to the output file
+
+        Returns:
+            None
+        """
         as_dict = self.to_dict()
         with open(output_file, 'w') as file:
             yaml.dump(as_dict, file)
@@ -100,6 +143,14 @@ class InstrumentConfiguration():
 
     @classmethod
     def create(cls, instrument_config):
+        """Create a new instance of InstrumentConfiguration given a dictionary input
+
+        Args:
+            instrument_config (dict): Dictionary in the format output by self.to_dict()
+
+        Returns:
+            configured_instrument (InstrumentConfiguration): Instance of self configured as desired
+        """
         configured_instrument = cls()
         if not 'detector_configs' in instrument_config:
             raise KeyError(f"Missing required configuration key: detector_configs")
@@ -111,6 +162,14 @@ class InstrumentConfiguration():
 
     @classmethod
     def open(cls, config_file):
+        """Create a new instance of InstrumentConfiguration given a input file
+
+        Args:
+            config_file (str): Path to configuration file
+
+        Returns:
+            configured_instrument (InstrumentConfiguration): Instance of self configured as desired
+        """
         if not os.path.isfile(config_file):
             raise FileNotFoundError(f"No such file: '{config_file}'")
         else:
@@ -137,6 +196,14 @@ class InstrumentConfiguration():
 
 
     def _validate_detector_config(self, detector_config):
+        """Ensure input detector configuration meets expected structure
+
+        Args:
+            detector_config (dict): Dictionary representing a detector configuration
+
+        Returns:
+            None
+        """
         if not isinstance(detector_config, dict):
             raise ValueError(f"Input detector configuration must be a dictionary")
         if 'channel_edges' not in detector_config or not isinstance(detector_config['channel_edges'], list):
@@ -146,6 +213,14 @@ class InstrumentConfiguration():
 
 
     def _get_detector_channel_mask(self, detector):
+        """Extract the channel mask for a specific detector
+
+        Args:
+            detector (str): Detector name/key
+
+        Returns:
+            (list[int]): List including only desired channels
+        """
         if detector not in self.detector_configs:
             raise ValueError(f"Requested detector is not in instrument's detector configurations")
         else:
@@ -171,6 +246,22 @@ class SearchConfiguration():
             Key of the instrument to be used as a reference during the search
         time_range: np.array
             Time range associated with the search
+        win_width: float
+            Search window width
+        min_loglr: float
+            Minimum log-likelihood ratio to be valid
+        min_dur: float
+            Minimum bin duration
+        max_dur: float
+            Maximum bin duration
+        min_step: float
+            Minimum step between bin durations
+        num_steps: int
+            Number of steps
+        threshold: float
+            Threshold value
+        skygrid_resolution: float
+            Resolution of the sky grid
 
         Public Methods:
         ---------------
@@ -180,6 +271,8 @@ class SearchConfiguration():
             Convert the SearchConfiguration to a pure dictionary
         add_instrument:
             Add a new instrument and corresponding InstrumentConfiguration
+        get_instrument_config:
+            Get the instance of a specified instrument's InstrumentConfiguration
 
         Class Methods:
         ---------------
@@ -193,6 +286,15 @@ class SearchConfiguration():
             Return if the given search_settings dictionary contains the necessary keys
         """
     def __init__(self, search_settings, instrument_configs=None):
+        """ Class constructor
+        Args:
+            search_settings (dict): A set of key-value pairs for the search settings. See self.validate_search_settings
+                for required keys
+            instrument_configs (list): A list of instrument configurations
+
+        Returns:
+            None
+        """
         self.instrument_configs = {}
         if len(instrument_configs):
             self.instrument_configs = instrument_configs
@@ -205,6 +307,14 @@ class SearchConfiguration():
 
 
     def add_instrument(self, instrument_config):
+        """Adds an instrument configuration to this search configuration
+
+        Args:
+            instrument_config (InstrumentConfiguration): An instrument configuration
+
+        Returns:
+            None
+        """
         if not isinstance(instrument_config, InstrumentConfiguration):
             raise ValueError(f"Input instrument configuration must be of type InstrumentConfiguration")
         i = self._get_existing_index(instrument_config.name)
@@ -216,6 +326,14 @@ class SearchConfiguration():
 
 
     def to_dict(self):
+        """Converts the SearchConfiguration to a dictionary
+
+        Args:
+            None
+
+        Returns:
+            Dictionary containing the instrument configurations, reference instrument, and search_settings from this instance
+        """
         instrument_config_dict = {}
         for instrument in self.instruments:
             instrument_config_dict[instrument] = self.instrument_configs[instrument].to_dict()
@@ -228,12 +346,28 @@ class SearchConfiguration():
 
 
     def save(self, output_file):
+        """Saves the SearchConfiguration to a file
+
+        Args:
+            output_file (str): Path to the output file
+
+        Returns:
+            None
+        """
         as_dict = self.to_dict()
         with open(output_file, 'w') as file:
             yaml.dump(as_dict, file)
 
     @classmethod
     def create(cls, search_config):
+        """Creates a new SearchConfiguration instance using an input dictionary
+
+        Args:
+            search_config (dict): Dictionary requiring keys for instrument_configs, reference_instrument, and search_settings
+
+        Returns:
+            SearchConfiguration object instantiated with input configuration
+        """
         if not 'instrument_configs' in search_config:
             raise KeyError(f"Missing required configuration key: instrument_configs")
         if not 'reference_instrument' in search_config:
@@ -251,6 +385,14 @@ class SearchConfiguration():
 
     @classmethod
     def open(cls, config_file):
+        """Creates an instance of SearchConfiguration using a specified input file
+
+        Args:
+            config_file (str): Path to configuration file
+
+        Returns:
+            SearchConfiguration object instantiated with input configuration
+        """
         if not os.path.isfile(config_file):
             raise FileNotFoundError(f"No such file: '{config_file}'")
         else:
@@ -274,8 +416,7 @@ class SearchConfiguration():
         min_step=0.064,
         num_steps=8,
         threshold=5.0,
-        skygrid_resolution=5
-    ):
+        skygrid_resolution=5):
         """
         Creates a dictionary of parameters with their corresponding values.
 
@@ -309,6 +450,14 @@ class SearchConfiguration():
 
     @classmethod
     def validate_search_settings(cls, search_settings):
+        """Ensures a given search_settings dictionary contains the required keys
+
+        Args:
+            search_settings (dict): Input search settings dictionary to validate
+
+        Returns:
+            (bool): Is the input a valid search settings dictionary
+        """
         return 'win_width' in search_settings and isinstance(search_settings['win_width'], int) and \
                'min_loglr' in search_settings and isinstance(search_settings['min_loglr'], int) and \
                'min_dur' in search_settings and isinstance(search_settings['min_dur'], float) and \
@@ -320,6 +469,14 @@ class SearchConfiguration():
 
 
     def get_instrument_config(self, instrument_name):
+        """Extracts a specified instrument's corresponding InstrumentConfiguration
+
+        Args:
+            instrument_name (str): The name of the instrument
+
+        Returns:
+            (InstrumentConfiguration): The instance of InstrumentConfugration that corresponds to the input instrument
+        """
         i = self._get_existing_index(instrument_name)
         if i is not None:
             return self.instrument_configs[i]
@@ -328,6 +485,14 @@ class SearchConfiguration():
 
 
     def _get_existing_index(self, instrument_name):
+        """Returns the index in instrument_configs of a requested instrument
+
+        Args:
+            instrument_name (str): The name of the requested instrument
+
+        Returns:
+            (int): The index corresponding to this instrument's configuration, or None if the specified instrument isn't found
+        """
         for i, config in enumerate(self.instrument_configs):
             if config.name == instrument_name:
                 return i
