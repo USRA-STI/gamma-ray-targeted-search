@@ -198,11 +198,11 @@ class InstrumentData:
         counts, exposure = self.counts(tstart, tstop)
 
         bkgd_rates, bkgd_variance, good = self.background_rates(tstart, tstop, exposure)
-        # TODO Stack counts, backgrounds across all Skygrid positions
 
         # Get full skygrid, templates response
         response, earthmask = self.load_response(tstart, tstop, skygrid)
-        # TODO What if instrument response skygrid != search skygrid?
+        # TODO What if instrument response skygrid != search skygrid? Currently, load_response does not use skygrid
+        #      or earthmask arguments
         rsp_templates, n_skygrid, _, _ = response.shape
 
         # NOTE: Why get n_skygrid from response, when n_templates is static, and n_skygrid can be grabbed from
