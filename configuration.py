@@ -35,12 +35,12 @@ class InstrumentConfiguration():
 
         Attributes:
         -----------
-        detector_configs: dict
-            Dictionary with keys being the detector names and values being the detector's corresponding configuration
-        detectors: list
-            Names of detectors from keys in detector_configs
-        name: str
+        config: dict
+            Instrument configuration dictionary with instrument name + detector configurations.
+        instrument_name: str
             Instrument name
+        detector_names: list
+            Names of detectors included in this configuration
         channel_mask: ndarray
             Array representing valid channels for each detector according to search criteria
         search_channels: dict
@@ -55,46 +55,25 @@ class InstrumentConfiguration():
             Save the configuration to a yaml file
         add_detector:
             Add a new detector and corresponding configuration
-        to_dict:
-            Convert the InstrumentConfiguration to a pure dictionary
 
 
         Class Methods:
         ---------------
-        create:
-            Create an InstrumentConfiguration object given a valid input dictionary with detectors and corresponding
-            configurations
         open:
             Create an InstrumentConfiguration object given a valid YAML file with detectors and corresponding
             configurations
-        """
-    def __init__(self, instrument_name=None, detector_configs=None):
+    """
+    def __init__(self, instrument_name=None, detectors=None):
         """ Class constructor
+
         Args:
             instrument_name (str): Instrument name
-            detector_configs (dict): Dictionary representing the configuration for each detector. Keys are detector names
+            detectors (dict): Dictionary representing the configuration for each detector. Keys are detector names
                 and values are detector configurations. Each detector should have set at minimum the channel edges and
                 the search channels to be used
-
-        Returns:
-            None
         """
-        self.detector_configs = {}
-        if detector_configs and isinstance(detector_configs, dict):
-            for detector, detector_config in detector_configs.items():
-                if not isinstance(detector, str):
-                    raise ValueError(f"Detector name is not of type string. Please check your inputs.")
-                try:
-                    self._validate_detector_config(detector_config)
-                except:
-                    raise ValueError(f"Detector {detector} config not valid. Please ensure necessary keys and"
-                                     f"values are properly configured.")
-                self.detector_configs[detector] = detector_config
-        if instrument_name and isinstance(instrument_name, str):
-            self.name = instrument_name
-        else:
-            raise ValueError(f"Instrument must have an assigned name of type string for reference")
-
+        self.config = {'instrument_name': instrument_name, 'detectors': detectors}
+        self.validate()
 
     def add_detector(self, detector_name, detector_config):
         """Add a new detector configuration
@@ -107,25 +86,8 @@ class InstrumentConfiguration():
         Returns:
             None
         """
-        self._validate_detector_config(detector_config)
-        self.detector_configs[detector_name] = detector_config
-
-
-    def to_dict(self):
-        """Convert the InstrumentConfiguration to a pure dictionary
-
-        Args:
-            None
-
-        Returns:
-            (dict): Dictionary with all the individual detectors' configurations stored (nested)
-        """
-        detector_config_dict = {}
-        for detector in self.detectors:
-            detector_config_dict[detector] = self.detector_configs[detector].to_dict()
-
-        return { 'detector_configs': detector_config_dict }
-
+        self.config['detectors'][detector_name] = detector_config
+        self.validate()
 
     def save(self, output_file):
         """Save the instrument configuration to a file
@@ -136,29 +98,8 @@ class InstrumentConfiguration():
         Returns:
             None
         """
-        as_dict = self.to_dict()
         with open(output_file, 'w') as file:
-            yaml.dump(as_dict, file)
-
-
-    @classmethod
-    def create(cls, instrument_config):
-        """Create a new instance of InstrumentConfiguration given a dictionary input
-
-        Args:
-            instrument_config (dict): Dictionary in the format output by self.to_dict()
-
-        Returns:
-            configured_instrument (InstrumentConfiguration): Instance of self configured as desired
-        """
-        configured_instrument = cls()
-        if not 'detector_configs' in instrument_config:
-            raise KeyError(f"Missing required configuration key: detector_configs")
-        for detector in instrument_config['detector_configs']:
-            detector_config = instrument_config['detector_configs'][detector]
-            configured_instrument.add_detector(detector, detector_config)
-        return configured_instrument
-
+            yaml.dump(self.config, file)
 
     @classmethod
     def open(cls, config_file):
@@ -173,44 +114,50 @@ class InstrumentConfiguration():
         if not os.path.isfile(config_file):
             raise FileNotFoundError(f"No such file: '{config_file}'")
         else:
-            configured_instrument = cls()
             with open(config_file, 'r') as file:
-                instrument_config = yaml.safe_load(file)
-                detector_configs = instrument_config['detector_configs']
-                for det in detector_configs:
-                    configured_instrument.add_detector(det, DetectorConfiguration.create(detector_configs[det]))
-                return configured_instrument
+                config = yaml.safe_load(file)
+                return cls(**config)
 
+    @property
+    def instrument_name(self):
+        return self.config["instrument_name"]
 
-    def __getattr__(self, item):
-        if item == 'detectors':
-            return list(self.detector_configs.keys())
-        if item == 'channel_mask':
-            return np.ravel([self._get_detector_channel_mask(det) for det in self.detectors])
-        if item == 'search_channels':
-            return { det: self.detector_configs[det]['search_channels'] for det in self.detectors }
-        if item == 'channel_edges':
-            return { det: self.detector_configs[det]['channel_edges'] for det in self.detectors }
-        if item == 'name':
-            return self.name
+    @property
+    def detector_names(self):
+        return list(self.config['detectors'].keys())
 
+    @property
+    def channel_mask(self):
+        return np.ravel([self._get_detector_channel_mask(det) for det in self.detectors])
 
-    def _validate_detector_config(self, detector_config):
-        """Ensure input detector configuration meets expected structure
+    @property
+    def search_channels(self):
+        return {det: det_config['search_channels'] for det, det_config in self.config['detectors'].items()}
 
-        Args:
-            detector_config (dict): Dictionary representing a detector configuration
+    @property
+    def channel_edges(self):
+        return {det: det_config['channel_edges'] for det, det_config in self.config['detectors'].items()}
 
-        Returns:
-            None
-        """
-        if not isinstance(detector_config, dict):
-            raise ValueError(f"Input detector configuration must be a dictionary")
-        if 'channel_edges' not in detector_config or not isinstance(detector_config['channel_edges'], list):
-            raise ValueError(f"Input detector configuration must contain a key channel_edges with a value of type list")
-        if 'search_channels' not in detector_config or not isinstance(detector_config['search_channels'], list):
-            raise ValueError(f"Input detector configuration must contain a key search_channels with a value of type list")
+    def validate(self):
+        """Ensure configuration meets expected structure"""
+        if not isinstance(self.config, dict):
+            raise ValueError(f"Underlying configuration must be a dictionary")
 
+        for key in ["instrument_name", "detectors"]:
+            if key not in self.config:
+                raise ValueError(f"Configuration missing '{key}'")
+
+        if not isinstance(self.config["instrument_name"], str):
+            raise ValueError(f"Instrument name is not a string. Please check your inputs.")
+
+        for detector, detector_config in self.config['detectors'].items():
+            for key in ["channel_edges", "search_channels"]:
+                if key not in detector_config:
+                    raise ValueError(f"Configuration['detectors']['{detector}'] missing '{key}'")
+
+                value = detector_config[key]
+                if not isinstance(value, list) or not isinstance(value[0], int):
+                    raise ValueError(f"Detector {detector} configuration must contain a key {key} with a value of type list(int)")
 
     def _get_detector_channel_mask(self, detector):
         """Extract the channel mask for a specific detector
@@ -221,14 +168,14 @@ class InstrumentConfiguration():
         Returns:
             (list[int]): List including only desired channels
         """
-        if detector not in self.detector_configs:
+        if detector not in self.config['detectors']:
             raise ValueError(f"Requested detector is not in instrument's detector configurations")
-        else:
-            config = self.detector_configs[detector]
-            search_channels = config['search_channels']
-            channel_edges = config['channel_edges']
 
-            return [channel in search_channels for channel in range(len(channel_edges) - 1)]
+        config = self.config['detectors'][det]
+        search_channels = config['search_channels']
+        channel_edges = config['channel_edges']
+
+        return [channel in search_channels for channel in range(len(channel_edges) - 1)]
 
 
 class SearchConfiguration():
@@ -285,7 +232,7 @@ class SearchConfiguration():
         validate_search_settings:
             Return if the given search_settings dictionary contains the necessary keys
         """
-    def __init__(self, search_settings, instrument_configs=None):
+    def __init__(self, search_settings=None, instrument_configs=None):
         """ Class constructor
         Args:
             search_settings (dict): A set of key-value pairs for the search settings. See self.validate_search_settings
@@ -300,6 +247,10 @@ class SearchConfiguration():
             self.instrument_configs = instrument_configs
         else:
             raise ValueError(f"There must be at least one instrument assigned to this search tool.")
+
+        if search_settings == None:
+            search_settings = self.build_search_settings()
+
         if self.validate_search_settings(search_settings):
             self.search_settings = search_settings
         else:
