@@ -194,26 +194,19 @@ class InstrumentConfiguration(BaseConfiguration):
                     raise ValueError(f"Detector {detector} configuration must contain a key {key} with a value of type list(int)")
 
 
-class SearchConfiguration():
+class SearchConfiguration(BaseConfiguration):
     """Class for the search configuration
 
         Attributes:
         -----------
-        search_settings: dict
-            Dictionary representing a collection of attributes required to run the targeted search
-        instrument_configs: dict
-            Dictionary where key names are the instrument and the values are their respective configurations
-        instruments: list
+        config: dict
+            Dictionary with the search_settings and instruments keys
+        instrument_names: list
             Names of available instruments from keys in instrument_configs
-        reference_instrument: String
+        reference_instrument: str
             Key of the instrument to be used as a reference during the search
         time_range: np.array
             Time range associated with the search
-        win_width: float
-            Search window width
-        min_loglr: float
-            Minimum log-likelihood ratio to be valid
-        min_dur: float
             Minimum bin duration
         max_dur: float
             Maximum bin duration
@@ -230,48 +223,33 @@ class SearchConfiguration():
         ---------------
         save:
             Save the Results to a yaml file
-        to_dict:
-            Convert the SearchConfiguration to a pure dictionary
         add_instrument:
             Add a new instrument and corresponding InstrumentConfiguration
-        get_instrument_config:
+        get_instrument:
             Get the instance of a specified instrument's InstrumentConfiguration
+        validate:
+            Validate the configuration dictionary
 
         Class Methods:
         ---------------
-        create:
-            Create a Configuration object given a valid set of input parameters
         open:
             Open an existing configuration object in a .yaml file
         build_search_settings:
-            Return a valid search configuration dictionary given a set of input parameters
-        validate_search_settings:
-            Return if the given search_settings dictionary contains the necessary keys
+            Return a valid search settings dictionary given a set of input parameters
         """
-    def __init__(self, search_settings=None, instrument_configs=None):
+    def __init__(self, search_settings=None, instruments=None):
         """ Class constructor
         Args:
             search_settings (dict): A set of key-value pairs for the search settings. See self.validate_search_settings
                 for required keys
-            instrument_configs (list): A list of instrument configurations
+            instruments (list): A list of instrument configurations
 
         Returns:
             None
         """
-        self.instrument_configs = {}
-        if len(instrument_configs):
-            self.instrument_configs = instrument_configs
-        else:
-            raise ValueError(f"There must be at least one instrument assigned to this search tool.")
-
-        if search_settings == None:
+        if search_settings is None:
             search_settings = self.build_search_settings()
-
-        if self.validate_search_settings(search_settings):
-            self.search_settings = search_settings
-        else:
-            raise ValueError(f"One of the required search_settings parameters has not been set")
-
+        super().__init__(search_settings=search_settings, instruments=instruments)
 
     def add_instrument(self, instrument_config):
         """Adds an instrument configuration to this search configuration
@@ -279,111 +257,13 @@ class SearchConfiguration():
         Args:
             instrument_config (InstrumentConfiguration): An instrument configuration
 
-        Returns:
-            None
         """
-        if not isinstance(instrument_config, InstrumentConfiguration):
-            raise ValueError(f"Input instrument configuration must be of type InstrumentConfiguration")
-        i = self._get_existing_index(instrument_config.name)
-        if i:
-            self.instrument_configs[i] = instrument_config
-            warnings.warn(f"Existing configuration replaced for {instrument_config.name}")
-        else:
-            self.instrument_configs.append(instrument_config)
-
-
-    def to_dict(self):
-        """Converts the SearchConfiguration to a dictionary
-
-        Args:
-            None
-
-        Returns:
-            Dictionary containing the instrument configurations, reference instrument, and search_settings from this instance
-        """
-        instrument_config_dict = {}
-        for instrument in self.instruments:
-            instrument_config_dict[instrument] = self.instrument_configs[instrument].to_dict()
-
-        return {
-            'instrument_configs': instrument_config_dict,
-            'reference_instrument': self.reference_instrument,
-            'search_settings': self.search_settings
-        }
-
-
-    def save(self, output_file):
-        """Saves the SearchConfiguration to a file
-
-        Args:
-            output_file (str): Path to the output file
-
-        Returns:
-            None
-        """
-        as_dict = self.to_dict()
-        with open(output_file, 'w') as file:
-            yaml.dump(as_dict, file)
+        self.config["instruments"].append(instrument_config)
+        self.validate()
 
     @classmethod
-    def create(cls, search_config):
-        """Creates a new SearchConfiguration instance using an input dictionary
-
-        Args:
-            search_config (dict): Dictionary requiring keys for instrument_configs, reference_instrument, and search_settings
-
-        Returns:
-            SearchConfiguration object instantiated with input configuration
-        """
-        if not 'instrument_configs' in search_config:
-            raise KeyError(f"Missing required configuration key: instrument_configs")
-        if not 'reference_instrument' in search_config:
-            raise KeyError(f"Missing required configuration key: reference_instrument")
-        if not 'search_settings' in search_config:
-            raise KeyError(f"Missing required configuration key: search_settings")
-        configured_search = cls(search_config['search_settings'], search_config['reference_instrument'])
-        for instrument in search_config['instrument_configs']:
-            instrument_config = search_config['instrument_configs'][instrument]
-            if isinstance(instrument_config, InstrumentConfiguration):
-                configured_search.add_instrument(instrument, instrument_config)
-            if isinstance(instrument_config, dict):
-                configured_instrument.add_instrument(instrument, InstrumentConfiguration.create(instrument_config))
-        return configured_search
-
-    @classmethod
-    def open(cls, config_file):
-        """Creates an instance of SearchConfiguration using a specified input file
-
-        Args:
-            config_file (str): Path to configuration file
-
-        Returns:
-            SearchConfiguration object instantiated with input configuration
-        """
-        if not os.path.isfile(config_file):
-            raise FileNotFoundError(f"No such file: '{config_file}'")
-        else:
-            with open(config_file, 'r') as file:
-                search_config = yaml.safe_load(file)
-
-                configured_search = cls(search_config['search_settings'], search_config['reference_instrument'])
-                instrument_configs = search_config['instrument_configs']
-                for instrument in instrument_configs:
-                    configured_search.add_instrument(instrument, InstrumentConfiguration.create(instrument_configs[instrument]))
-                return configured_search
-
-
-    @classmethod
-    def build_search_settings(
-        cls,
-        win_width=60,
-        min_loglr=5,
-        min_dur=0.064,
-        max_dur=8.192,
-        min_step=0.064,
-        num_steps=8,
-        threshold=5.0,
-        skygrid_resolution=5):
+    def build_search_settings(cls, win_width=60, min_loglr=5, min_dur=0.064, max_dur=8.192,
+                              min_step=0.064, num_steps=8, threshold=5.0, skygrid_resolution=5):
         """
         Creates a dictionary of parameters with their corresponding values.
 
@@ -400,31 +280,26 @@ class SearchConfiguration():
         Returns:
             dict: A dictionary with parameter names as keys and their values
         """
+        return {'win_width': win_width, 'min_loglr': min_loglr,
+                'min_dur': min_dur, 'max_dur': max_dur,
+                'min_step': min_step, 'num_steps': num_steps,
+                'threshold': threshold,'skygrid_resolution': skygrid_resolution}
 
-        search_settings = {
-            'win_width': win_width,
-            'min_loglr': min_loglr,
-            'min_dur': min_dur,
-            'max_dur': max_dur,
-            'min_step': min_step,
-            'num_steps': num_steps,
-            'threshold': threshold,
-            'skygrid_resolution': skygrid_resolution
-        }
-
-        return search_settings
-
-
-    @classmethod
-    def validate_search_settings(cls, search_settings):
+    def validate(self):
         """Ensures a given search_settings dictionary contains the required keys
 
         Args:
             search_settings (dict): Input search settings dictionary to validate
-
-        Returns:
-            (bool): Is the input a valid search settings dictionary
         """
+        if not isinstance(instrument_config, InstrumentConfiguration):
+            raise ValueError(f"Input instrument configuration must be of type InstrumentConfiguration")
+        i = self._get_existing_index(instrument_config.name)
+        if i:
+            self.instrument_configs[i] = instrument_config
+            warnings.warn(f"Existing configuration replaced for {instrument_config.name}")
+        else:
+            self.instrument_configs.append(instrument_config)
+
         return 'win_width' in search_settings and isinstance(search_settings['win_width'], int) and \
                'min_loglr' in search_settings and isinstance(search_settings['min_loglr'], int) and \
                'min_dur' in search_settings and isinstance(search_settings['min_dur'], float) and \
@@ -434,8 +309,31 @@ class SearchConfiguration():
                'threshold' in search_settings and isinstance(search_settings['threshold'], float) and \
                'skygrid_resolution' in search_settings and isinstance(search_settings['skygrid_resolution'], int)
 
+        if not 'instrument_configs' in search_config:
+            raise KeyError(f"Missing required configuration key: instrument_configs")
+        if not 'reference_instrument' in search_config:
+            raise KeyError(f"Missing required configuration key: reference_instrument")
+        if not 'search_settings' in search_config:
+            raise KeyError(f"Missing required configuration key: search_settings")
+        configured_search = cls(search_config['search_settings'], search_config['reference_instrument'])
+        for instrument in search_config['instrument_configs']:
+            instrument_config = search_config['instrument_configs'][instrument]
+            if isinstance(instrument_config, InstrumentConfiguration):
+                configured_search.add_instrument(instrument, instrument_config)
+            if isinstance(instrument_config, dict):
+                configured_instrument.add_instrument(instrument, InstrumentConfiguration.create(instrument_config))
+        return configured_search
+        self.instrument_configs = {}
+        if len(instrument_configs):
+            self.instrument_configs = instrument_configs
+        else:
+            raise ValueError(f"There must be at least one instrument assigned to this search tool.")
 
-    def get_instrument_config(self, instrument_name):
+
+        else:
+            raise ValueError(f"One of the required search_settings parameters has not been set")
+
+    def get_instrument(self, instrument_name):
         """Extracts a specified instrument's corresponding InstrumentConfiguration
 
         Args:
@@ -465,15 +363,16 @@ class SearchConfiguration():
                 return i
         return None
 
+    @property
+    def instruments(self):
+        return list(self.instrument_configs.keys())
 
-    def __getattr__(self, item):
-        if item == 'instruments':
-            return list(self.instrument_configs.keys())
-        if item == 'time_range':
-            max_dur = self.search_settings['max_dur']
-            win_width = self.search_settings['win_width']
-            return np.array([-1, 1]) * max([0.5 * win_width + max_dur + 1.024, 30])
-        if item in self.search_settings.keys():
-            return self.search_settings[item]
-        if item == 'reference_instrument':
-            return self.instrument_configs[0].name
+    @property
+    def time_range(self):
+        win_width = self.search_settings['win_width']
+        return np.array([-0.5 * win_width, 0.5 * win_width])
+
+    @property
+    def reference_instrument(self):
+        """(str): Name of the reference instrument (always the first item in the instruments list)"""
+        return self.config["instruments"][0].name
