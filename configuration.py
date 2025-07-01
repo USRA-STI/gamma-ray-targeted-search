@@ -128,7 +128,12 @@ class InstrumentConfiguration():
 
     @property
     def channel_mask(self):
-        return np.ravel([self._get_detector_channel_mask(det) for det in self.detectors])
+        """Construct the mask of allowed detector channels for a search"""
+        mask = []
+        for det_config in self.config['detectors'].values():
+            mask.append([channel in det_config['search_channels']
+                         for channel in range(len(det_config['channel_edges']) - 1)])
+        return np.ravel(mask)
 
     @property
     def search_channels(self):
@@ -158,24 +163,6 @@ class InstrumentConfiguration():
                 value = detector_config[key]
                 if not isinstance(value, list) or not isinstance(value[0], int):
                     raise ValueError(f"Detector {detector} configuration must contain a key {key} with a value of type list(int)")
-
-    def _get_detector_channel_mask(self, detector):
-        """Extract the channel mask for a specific detector
-
-        Args:
-            detector (str): Detector name/key
-
-        Returns:
-            (list[int]): List including only desired channels
-        """
-        if detector not in self.config['detectors']:
-            raise ValueError(f"Requested detector is not in instrument's detector configurations")
-
-        config = self.config['detectors'][det]
-        search_channels = config['search_channels']
-        channel_edges = config['channel_edges']
-
-        return [channel in search_channels for channel in range(len(channel_edges) - 1)]
 
 
 class SearchConfiguration():
