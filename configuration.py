@@ -206,16 +206,6 @@ class SearchConfiguration(BaseConfiguration):
         time_range: np.array
             Time range associated with the search
             Minimum bin duration
-        max_dur: float
-            Maximum bin duration
-        min_step: float
-            Minimum step between bin durations
-        num_steps: int
-            Number of steps
-        threshold: float
-            Threshold value
-        skygrid_resolution: float
-            Resolution of the sky grid
 
         Public Methods:
         ---------------
@@ -232,22 +222,27 @@ class SearchConfiguration(BaseConfiguration):
         ---------------
         open:
             Open an existing configuration object in a .yaml file
-        build_search_settings:
-            Return a valid search settings dictionary given a set of input parameters
-        """
-    def __init__(self, search_settings=None, instruments=None):
+    """
+    def __init__(self, win_width=60, min_loglr=5, min_dur=0.064, max_dur=8.192,
+                 min_step=0.064, num_steps=8, threshold=5.0, skygrid_resolution=5,
+                 instruments=None, **kwargs):
         """ Class constructor
-        Args:
-            search_settings (dict): A set of key-value pairs for the search settings. See self.validate_search_settings
-                for required keys
-            instruments (list): A list of instrument configurations
 
-        Returns:
-            None
+        Args:
+            win_width (int): Width of the window. Default: 60
+            min_loglr (int): Minimum log likelihood ratio. Default: 5
+            min_dur (float): Minimum duration in seconds. Default: 0.064
+            max_dur (float): Maximum duration in seconds. Default: 8.192
+            min_step (float): Minimum step size in seconds. Default: 0.064
+            num_steps (int): Number of steps. Default: 8
+            threshold (float): Threshold value. Default: 5.0
+            skygrid_resolution (int): Resolution for skygrid. Default: 5   
+            instruments (list): A list of instrument configurations
+            **kwargs (optional): Optional keyword arguments
         """
-        if search_settings is None:
-            search_settings = self.build_search_settings()
-        super().__init__(search_settings=search_settings, instruments=instruments)
+        super().__init__(win_width=win_width, min_loglr=min_loglr, min_dur=min_dur,
+                         max_dur=max_dur, min_step=min_step, num_steps=num_steps, threshold=threshold,
+                         skygrid_resolution=skygrid_resolution, instruments=instruments, **kwargs)
 
     def add_instrument(self, instrument_config):
         """Adds an instrument configuration to this search configuration
@@ -258,30 +253,6 @@ class SearchConfiguration(BaseConfiguration):
         """
         self.config["instruments"].append(instrument_config)
         self.validate()
-
-    @classmethod
-    def build_search_settings(cls, win_width=60, min_loglr=5, min_dur=0.064, max_dur=8.192,
-                              min_step=0.064, num_steps=8, threshold=5.0, skygrid_resolution=5):
-        """
-        Creates a dictionary of parameters with their corresponding values.
-
-        Args:
-            win_width (int): Width of the window. Default: 60
-            min_loglr (int): Minimum log likelihood ratio. Default: 5
-            min_dur (float): Minimum duration in seconds. Default: 0.064
-            max_dur (float): Maximum duration in seconds. Default: 8.192
-            min_step (float): Minimum step size in seconds. Default: 0.064
-            num_steps (int): Number of steps. Default: 8
-            threshold (float): Threshold value. Default: 5.0
-            skygrid_resolution (int): Resolution for skygrid. Default: 5
-
-        Returns:
-            dict: A dictionary with parameter names as keys and their values
-        """
-        return {'win_width': win_width, 'min_loglr': min_loglr,
-                'min_dur': min_dur, 'max_dur': max_dur,
-                'min_step': min_step, 'num_steps': num_steps,
-                'threshold': threshold,'skygrid_resolution': skygrid_resolution}
 
     def validate(self):
         """Ensures a given search_settings dictionary contains the required keys
@@ -344,30 +315,16 @@ class SearchConfiguration(BaseConfiguration):
         Returns:
             (InstrumentConfiguration): The instance of InstrumentConfugration that corresponds to the input instrument
         """
-        i = self._get_existing_index(instrument_name)
-        if i is not None:
-            return self.instrument_configs[i]
-        else:
-            raise KeyError(f"Key {instrument_name} does not exist in instrument configs")
-
-
-    def _get_existing_index(self, instrument_name):
-        """Returns the index in instrument_configs of a requested instrument
-
-        Args:
-            instrument_name (str): The name of the requested instrument
-
-        Returns:
-            (int): The index corresponding to this instrument's configuration, or None if the specified instrument isn't found
-        """
-        for i, config in enumerate(self.instrument_configs):
-            if config.name == instrument_name:
-                return i
-        return None
+        try:
+            i = self.instrument_names.index(instrument_name)
+            return self["instruments"][i]
+        except ValueError:
+            print(f"{instrument_name} does not exist in instruments list")
+            exit(0)
 
     @property
-    def instruments(self):
-        return list(self.instrument_configs.keys())
+    def instrument_names(self):
+        return [instrument["instrument_name"] for instrument in self["instruments"]]
 
     @property
     def time_range(self):
