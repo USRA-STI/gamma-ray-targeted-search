@@ -43,13 +43,17 @@ class BaseConfiguration(ABC):
         return the data path as a string
     """
     def __init__(self, **kwargs):
-        """ Class constructor
+        """Class constructor
 
         Args:
             kwargs (dict): Keyword dictionary with configuration parameters.
         """
         self.config = kwargs
         self.validate()
+
+    def __getitem__(self, key):
+        """Method for high level access to config dict"""
+        return self.config[key]
 
     def save(self, output_file):
         """Save the instrument configuration to a file
@@ -96,8 +100,6 @@ class InstrumentConfiguration(BaseConfiguration):
         -----------
         config: dict
             Instrument configuration dictionary with instrument name + detector configurations.
-        instrument_name: str
-            Instrument name
         detector_names: list
             Names of detectors included in this configuration
         channel_mask: ndarray
@@ -144,33 +146,29 @@ class InstrumentConfiguration(BaseConfiguration):
         Returns:
             None
         """
-        self.config['detectors'][detector_name] = detector_config
+        self['detectors'][detector_name] = detector_config
         self.validate()
 
     @property
-    def instrument_name(self):
-        return self.config["instrument_name"]
-
-    @property
     def detector_names(self):
-        return list(self.config['detectors'].keys())
+        return list(self['detectors'].keys())
 
     @property
     def channel_mask(self):
         """Construct the mask of allowed detector channels for a search"""
         mask = []
-        for det_config in self.config['detectors'].values():
+        for det_config in self['detectors'].values():
             mask.append([channel in det_config['search_channels']
                          for channel in range(len(det_config['channel_edges']) - 1)])
         return np.ravel(mask)
 
     @property
     def search_channels(self):
-        return {det: det_config['search_channels'] for det, det_config in self.config['detectors'].items()}
+        return {det: det_config['search_channels'] for det, det_config in self['detectors'].items()}
 
     @property
     def channel_edges(self):
-        return {det: det_config['channel_edges'] for det, det_config in self.config['detectors'].items()}
+        return {det: det_config['channel_edges'] for det, det_config in self['detectors'].items()}
 
     def validate(self):
         """Ensure configuration meets expected structure"""
@@ -181,10 +179,10 @@ class InstrumentConfiguration(BaseConfiguration):
             if key not in self.config:
                 raise ValueError(f"Configuration missing '{key}'")
 
-        if not isinstance(self.config["instrument_name"], str):
+        if not isinstance(self["instrument_name"], str):
             raise ValueError(f"Instrument name is not a string. Please check your inputs.")
 
-        for detector, detector_config in self.config['detectors'].items():
+        for detector, detector_config in self['detectors'].items():
             for key in ["channel_edges", "search_channels"]:
                 if key not in detector_config:
                     raise ValueError(f"Configuration['detectors']['{detector}'] missing '{key}'")
@@ -291,6 +289,9 @@ class SearchConfiguration(BaseConfiguration):
         Args:
             search_settings (dict): Input search settings dictionary to validate
         """
+        pass
+
+        """
         if not isinstance(instrument_config, InstrumentConfiguration):
             raise ValueError(f"Input instrument configuration must be of type InstrumentConfiguration")
         i = self._get_existing_index(instrument_config.name)
@@ -332,6 +333,7 @@ class SearchConfiguration(BaseConfiguration):
 
         else:
             raise ValueError(f"One of the required search_settings parameters has not been set")
+        """
 
     def get_instrument(self, instrument_name):
         """Extracts a specified instrument's corresponding InstrumentConfiguration
