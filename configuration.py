@@ -29,8 +29,67 @@ import yaml
 import numpy as np
 import warnings
 
+from abc import ABC, abstractmethod
 
-class InstrumentConfiguration():
+
+class BaseConfiguration(ABC):
+    """A base class for configuration objects.
+
+    Note:
+        This class should not be directly instantiated, but rather inherited.
+        The inherited class should define a method called
+        ``validate()`` that accepts ``*args``, which are the user-defined
+        parameters required to define the data path, and the method should
+        return the data path as a string
+    """
+    def __init__(self, **kwargs):
+        """ Class constructor
+
+        Args:
+            kwargs (dict): Keyword dictionary with configuration parameters.
+        """
+        self.config = kwargs
+        self.validate()
+
+    def save(self, output_file):
+        """Save the instrument configuration to a file
+
+        Args:
+            output_file (str): Path to the output file
+
+        Returns:
+            None
+        """
+        with open(output_file, 'w') as file:
+            file.write(f"# {type(self)}\n")
+            yaml.dump(self.config, file, default_flow_style=None, sort_keys=False)
+
+    @classmethod
+    def open(cls, config_file):
+        """Create a new instance of InstrumentConfiguration given a input file
+
+        Args:
+            config_file (str): Path to configuration file
+
+        Returns:
+            configured_instrument (InstrumentConfiguration): Instance of self configured as desired
+        """
+        if not os.path.isfile(config_file):
+            raise FileNotFoundError(f"No such file: '{config_file}'")
+        else:
+            with open(config_file, 'r') as file:
+                config = yaml.safe_load(file)
+                return cls(**config)
+
+    @abstractmethod
+    def validate(self):
+        """This method needs to be defined by the inheriting class. The method
+        should check if the config dictionary has the correct format and
+        raise errors when the format checks fail"""
+        pass
+
+
+class InstrumentConfiguration(BaseConfiguration):
     """Class for the instrument configuration
 
         Attributes:
@@ -72,8 +131,7 @@ class InstrumentConfiguration():
                 and values are detector configurations. Each detector should have set at minimum the channel edges and
                 the search channels to be used
         """
-        self.config = {'instrument_name': instrument_name, 'detectors': detectors}
-        self.validate()
+        super().__init__(instrument_name=instrument_name, detectors=detectors)
 
     def add_detector(self, detector_name, detector_config):
         """Add a new detector configuration
@@ -88,35 +146,6 @@ class InstrumentConfiguration():
         """
         self.config['detectors'][detector_name] = detector_config
         self.validate()
-
-    def save(self, output_file):
-        """Save the instrument configuration to a file
-
-        Args:
-            output_file (str): Path to the output file
-
-        Returns:
-            None
-        """
-        with open(output_file, 'w') as file:
-            yaml.dump(self.config, file)
-
-    @classmethod
-    def open(cls, config_file):
-        """Create a new instance of InstrumentConfiguration given a input file
-
-        Args:
-            config_file (str): Path to configuration file
-
-        Returns:
-            configured_instrument (InstrumentConfiguration): Instance of self configured as desired
-        """
-        if not os.path.isfile(config_file):
-            raise FileNotFoundError(f"No such file: '{config_file}'")
-        else:
-            with open(config_file, 'r') as file:
-                config = yaml.safe_load(file)
-                return cls(**config)
 
     @property
     def instrument_name(self):
