@@ -40,7 +40,7 @@ class BaseConfiguration(ABC):
         The inherited class should define a method called ``validate()``
         to enforce the required format of the config dictionary.
     """
-    _derived_keys = None
+    _derived_keys = []
 
     def __init__(self, **kwargs):
         """Class constructor
@@ -132,7 +132,7 @@ class InstrumentConfiguration(BaseConfiguration):
             Create an InstrumentConfiguration object given a valid YAML file with detectors and corresponding
             configurations
     """
-    _derived_keys = ["detector_names", "channel_edges", "channel_mask", "search_channels"]
+    _derived_keys = ['detector_names', 'channel_edges', 'channel_mask', 'search_channels']
 
     def __init__(self, instrument_name=None, detectors=None):
         """ Class constructor
@@ -156,6 +156,8 @@ class InstrumentConfiguration(BaseConfiguration):
         Returns:
             None
         """
+        if detector_name in self['detectors']:
+            warnings.warn(f"Replacing detector {detector_name}")
         self['detectors'][detector_name] = detector_config
         self.validate()
 
@@ -185,15 +187,15 @@ class InstrumentConfiguration(BaseConfiguration):
         if not isinstance(self.config, dict):
             raise ValueError(f"Underlying configuration must be a dictionary")
 
-        for key in ["instrument_name", "detectors"]:
+        for key in ['instrument_name', 'detectors']:
             if key not in self.config:
                 raise ValueError(f"Configuration missing '{key}'")
 
-        if not isinstance(self["instrument_name"], str):
+        if not isinstance(self['instrument_name'], str):
             raise ValueError(f"Instrument name is not a string. Please check your inputs.")
 
         for detector, detector_config in self['detectors'].items():
-            for key in ["channel_edges", "search_channels"]:
+            for key in ['channel_edges', 'search_channels']:
                 if key not in detector_config:
                     raise ValueError(f"Configuration['detectors']['{detector}'] missing '{key}'")
 
@@ -233,27 +235,26 @@ class SearchConfiguration(BaseConfiguration):
         open:
             Open an existing configuration object in a .yaml file
     """
-    _derived_keys = ["instrument_names", "reference_name", "time_range"]
+    _derived_keys = ['instrument_names', 'reference_name', 'time_range']
 
-    def __init__(self, win_width=60, min_loglr=5, min_dur=0.064, max_dur=8.192,
-                 min_step=0.064, num_steps=8, threshold=5.0, skygrid_resolution=5,
+    def __init__(self, win_width=60, min_loglr=5.0, min_dur=0.064, max_dur=8.192,
+                 min_step=0.064, num_steps=8, skygrid_resolution=5.0,
                  instruments=None, **kwargs):
         """ Class constructor
 
         Args:
-            win_width (int): Width of the window. Default: 60
-            min_loglr (int): Minimum log likelihood ratio. Default: 5
+            win_width (float): Width of the window. Default: 60
+            min_loglr (float): Minimum log likelihood ratio. Default: 5
             min_dur (float): Minimum duration in seconds. Default: 0.064
             max_dur (float): Maximum duration in seconds. Default: 8.192
             min_step (float): Minimum step size in seconds. Default: 0.064
             num_steps (int): Number of steps. Default: 8
-            threshold (float): Threshold value. Default: 5.0
-            skygrid_resolution (int): Resolution for skygrid. Default: 5   
+            skygrid_resolution (float): Resolution for skygrid. Default: 5.0
             instruments (list): A list of instrument configurations
             **kwargs (optional): Optional keyword arguments
         """
         super().__init__(win_width=win_width, min_loglr=min_loglr, min_dur=min_dur,
-                         max_dur=max_dur, min_step=min_step, num_steps=num_steps, threshold=threshold,
+                         max_dur=max_dur, min_step=min_step, num_steps=num_steps,
                          skygrid_resolution=skygrid_resolution, instruments=instruments, **kwargs)
 
     def add_instrument(self, instrument_config):
@@ -261,62 +262,14 @@ class SearchConfiguration(BaseConfiguration):
 
         Args:
             instrument_config (InstrumentConfiguration): An instrument configuration
-
         """
-        self.config["instruments"].append(instrument_config)
+        if instrument_config['instrument_name'] in self.instrument_names:
+            warnings.warn(f"Replacing instrument {instrument_config['instrument_name']}")
+            i = self.instrument_names.index(instrument_name)
+            self['instruments'][i] = instrument_config
+        else:
+            self['instruments'].append(instrument_config)
         self.validate()
-
-    def validate(self):
-        """Ensures a given search_settings dictionary contains the required keys
-
-        Args:
-            search_settings (dict): Input search settings dictionary to validate
-        """
-        pass
-
-        """
-        if not isinstance(instrument_config, InstrumentConfiguration):
-            raise ValueError(f"Input instrument configuration must be of type InstrumentConfiguration")
-        i = self._get_existing_index(instrument_config.name)
-        if i:
-            self.instrument_configs[i] = instrument_config
-            warnings.warn(f"Existing configuration replaced for {instrument_config.name}")
-        else:
-            self.instrument_configs.append(instrument_config)
-
-        return 'win_width' in search_settings and isinstance(search_settings['win_width'], int) and \
-               'min_loglr' in search_settings and isinstance(search_settings['min_loglr'], int) and \
-               'min_dur' in search_settings and isinstance(search_settings['min_dur'], float) and \
-               'max_dur' in search_settings and isinstance(search_settings['max_dur'], float) and \
-               'min_step' in search_settings and isinstance(search_settings['min_step'], float) and \
-               'num_steps' in search_settings and isinstance(search_settings['num_steps'], int) and \
-               'threshold' in search_settings and isinstance(search_settings['threshold'], float) and \
-               'skygrid_resolution' in search_settings and isinstance(search_settings['skygrid_resolution'], int)
-
-        if not 'instrument_configs' in search_config:
-            raise KeyError(f"Missing required configuration key: instrument_configs")
-        if not 'reference_instrument' in search_config:
-            raise KeyError(f"Missing required configuration key: reference_instrument")
-        if not 'search_settings' in search_config:
-            raise KeyError(f"Missing required configuration key: search_settings")
-        configured_search = cls(search_config['search_settings'], search_config['reference_instrument'])
-        for instrument in search_config['instrument_configs']:
-            instrument_config = search_config['instrument_configs'][instrument]
-            if isinstance(instrument_config, InstrumentConfiguration):
-                configured_search.add_instrument(instrument, instrument_config)
-            if isinstance(instrument_config, dict):
-                configured_instrument.add_instrument(instrument, InstrumentConfiguration.create(instrument_config))
-        return configured_search
-        self.instrument_configs = {}
-        if len(instrument_configs):
-            self.instrument_configs = instrument_configs
-        else:
-            raise ValueError(f"There must be at least one instrument assigned to this search tool.")
-
-
-        else:
-            raise ValueError(f"One of the required search_settings parameters has not been set")
-        """
 
     def get_instrument(self, instrument_name):
         """Extracts a specified instrument's corresponding InstrumentConfiguration
@@ -329,7 +282,7 @@ class SearchConfiguration(BaseConfiguration):
         """
         try:
             i = self.instrument_names.index(instrument_name)
-            return self["instruments"][i]
+            return self['instruments'][i]
         except ValueError:
             print(f"{instrument_name} does not exist in instruments list")
             exit(0)
@@ -337,15 +290,34 @@ class SearchConfiguration(BaseConfiguration):
     @property
     def instrument_names(self):
         """(list): list of instrument names"""
-        return [instrument["instrument_name"] for instrument in self["instruments"]]
+        return [instrument['instrument_name'] for instrument in self['instruments']]
 
     @property
     def reference_instrument(self):
         """(str): Name of the reference instrument (always the first item in the instruments list)"""
-        return self.config["instruments"][0].name
+        return self['instruments'][0].name
 
     @property
     def time_range(self):
         """(np.ndarray): search time range (tstart, tstop)"""
-        win_width = self.search_settings['win_width']
-        return np.array([-0.5 * win_width, 0.5 * win_width])
+        return np.array([-0.5 * self['win_width'], 0.5 * self['win_width']])
+
+    def validate(self):
+        """Ensure configuration meets expected structure"""
+        # enforce integer types
+        for key in ['num_steps']:
+            if not isinstance(self.config[key], int):
+                raise ValueError(f"{key} must be of type int")
+
+        # enforce number types (int or float)
+        for key in ['win_width', 'min_loglr', 'min_dur', 'max_dur', 'min_step', 'skygrid_resolution']:
+            if not isinstance(self.config[key], int) and not isinstance(self.config[key], float):
+                raise ValueError(f"{key} must be of type int or float")
+
+        # check instrument configs
+        if len(self['instruments']) == 0:
+            raise ValueError(f"There must be at least one instrument included with search settings")
+
+        for instrument_config in self['instruments']:
+            if not isinstance(instrument_config, InstrumentConfiguration):
+                raise ValueError(f"Instrument configuration must be of type InstrumentConfiguration")
