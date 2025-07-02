@@ -62,46 +62,44 @@ gbm_config = InstrumentConfiguration('gbm', det_configs)
 
 t0 = 524666469.44569993
 
-search_settings = SearchConfiguration.build_search_settings()
-search_settings['win_width'] = 10
-search_config = SearchConfiguration(search_settings, [gbm_config])
+search_config = SearchConfiguration(win_width=10, instruments=[gbm_config])
 
 time_range = search_config.time_range
 
-skygrid = utils.SkyGrid(search_config.skygrid_resolution)
+skygrid = utils.SkyGrid(search_config['skygrid_resolution'])
 
 ########################################################################################################################
 ####################################### Getting the data (user responsibility) #########################################
 
 # Load GBM detector and background data, and instrument's spacecraft_frames
-channel_edges = gbm_config.channel_edges
+channel_edges = gbm_config['channel_edges']
 tte_data = []
-for det in track(gbm_config.detectors, description="Opening TTE files"):
+for det in track(gbm_config['detector_names'], description="Opening TTE files"):
     path = f"data/gbm/524666469.429/glg_tte_{det}_170817_12z_v00.fit.gz"
     tte = utils.update_tte_trigtime(GbmTte.open(path), t0)
     tte = tte.rebin_energy(rebin_by_edge_index, np.array(channel_edges[det]))
     tte_data.append(tte)
 
-ttes = DataCollection.from_list(tte_data, names=gbm_config.detectors)
+ttes = DataCollection.from_list(tte_data, names=gbm_config['detector_names'])
 
-phaii_resolution = search_config.min_dur
+phaii_resolution = search_config['min_dur']
 clock0 = unix_time.time()
 phaii_list = ttes.to_phaii(bin_by_time, phaii_resolution, time_ref=0, time_range=time_range)
-phaiis = DataCollection.from_list(phaii_list, names=gbm_config.detectors)
+phaiis = DataCollection.from_list(phaii_list, names=gbm_config['detector_names'])
 print("\nPhaii binning took %.1f sec" % (unix_time.time() - clock0))
 
 bkgd_fit_ranges = [-30, 30]
 clock0 = unix_time.time()
 backfitters = DataCollection.from_list(
     [BackgroundFitter.from_phaii(phaii, Polynomial, time_ranges=[bkgd_fit_ranges]) for phaii in phaiis],
-    names=gbm_config.detectors)
+    names=gbm_config['detector_names'])
 backfitters.fit(order=1)
 print("\nBackground Fit took %.1f sec" % (unix_time.time() - clock0))
 
 #bkgd_range = [-30, 30]
 #backfitters = DataCollection.from_list(
 #    [BackgroundFitter.from_tte(tte.slice_time(bkgd_range), NaivePoisson) for tte in ttes],
-#    names=gbm_config.detectors)
+#    names=gbm_config['detector_names'])
 #backfitters.fit(window_width=125., fast=True)
 
 
@@ -141,8 +139,8 @@ for entry in opened_results.data:
 # results.data = result_inputs
 
 # filtered_results = results.remove_pe()
-# filtered_results = filtered_results.downselect(threshold=search_config.min_loglr, no_empty=True)
-# filtered_results = filtered_results.downselect(combine_spec=False, fixedwin=search_config.win_width)
+# filtered_results = filtered_results.downselect(threshold=search_config['min_loglr'], no_empty=True)
+# filtered_results = filtered_results.downselect(combine_spec=False, fixedwin=search_config['win_width'])
 # filtered_results.remove_dur_spec(8.192, 'soft')
 #
 # print('\nFound the following {} candidates:'.format(filtered_results.size))

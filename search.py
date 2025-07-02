@@ -103,7 +103,7 @@ class TargetedScanner():
             tstart (float): Float representing the start bin
             tend (float): Float representing the end bin
         """
-        reference_instrument = self.search_configuration.reference_instrument
+        reference_instrument = self.search_configuration['reference_instrument']
         reference_data = self.instrument_data[reference_instrument].data
 
         tstart = None
@@ -146,12 +146,11 @@ class TargetedScanner():
         Returns:
             timebins: list of bins with tuples representing the start times and durations of each search bin
         """
-        search_configuration = self.search_configuration
-        win_width = search_configuration.win_width
-        min_dur = search_configuration.min_dur
-        max_dur = search_configuration.max_dur
-        min_step = search_configuration.min_step
-        num_steps = search_configuration.num_steps
+        win_width = self.search_configuration['win_width']
+        min_dur = self.search_configuration['min_dur']
+        max_dur = self.search_configuration['max_dur']
+        min_step = self.search_configuration['min_step']
+        num_steps = self.search_configuration['num_steps']
 
         search_range = (-win_width / 2.0, win_width / 2.0)
 
@@ -221,13 +220,13 @@ class TargetedScanner():
 
         duration = tstop - tstart
 
-        reference_instrument = self.search_configuration.reference_instrument
+        reference_instrument = self.search_configuration['reference_instrument']
         reference_frame = self.instrument_data[reference_instrument].get_spacecraft_frame((tstart + tstop) / 2)
         outputs = {}
 
         for instrument in self.instrument_data.keys():
             instrument_data = self.instrument_data[instrument]
-            instrument_config = self.search_configuration.get_instrument_config(instrument)
+            instrument_config = self.search_configuration.get_instrument(instrument)
             if instrument == reference_instrument:
                 outputs[instrument] = instrument_data.format_data(instrument_config, tstart, tstop,
                                                                   self.skygrid, shape_data)
@@ -295,7 +294,7 @@ class TargetedScanner():
             timebins (list[tuple]): List of timebines with each tuple aligned to the reference instrument's binned data,
                 or the original input in the case that alignment was not needed or the reference data was unbinned
         """
-        reference_instrument = self.search_configuration.reference_instrument
+        reference_instrument = self.search_configuration['reference_instrument']
         reference_data = self.instrument_data[reference_instrument].data
 
         for i, (bin, dur) in enumerate(timebins):
