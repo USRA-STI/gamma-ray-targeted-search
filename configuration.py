@@ -37,11 +37,11 @@ class BaseConfiguration(ABC):
 
     Note:
         This class should not be directly instantiated, but rather inherited.
-        The inherited class should define a method called
-        ``validate()`` that accepts ``*args``, which are the user-defined
-        parameters required to define the data path, and the method should
-        return the data path as a string
+        The inherited class should define a method called ``validate()``
+        to enforce the required format of the config dictionary.
     """
+    _derived_keys = None
+
     def __init__(self, **kwargs):
         """Class constructor
 
@@ -51,8 +51,16 @@ class BaseConfiguration(ABC):
         self.config = kwargs
         self.validate()
 
+    def keys(self):
+        """(list): Method to retrieve available configuration keys"""
+        return list(self.config.keys()) + self._derived_keys
+
     def __getitem__(self, key):
-        """Method for high level access to config dict"""
+        """Method for high level access to config dict and derived keys"""
+        if key not in self.keys():
+            raise KeyError(f"{key} is not a valid key.")
+        if key in self._derived_keys:
+            return getattr(self, key)
         return self.config[key]
 
     def save(self, output_file):
@@ -102,12 +110,12 @@ class InstrumentConfiguration(BaseConfiguration):
             Instrument configuration dictionary with instrument name + detector configurations.
         detector_names: list
             Names of detectors included in this configuration
+        channel_edges: dict
+            Dict where keys are detector names and values are the channel edges for each detector
         channel_mask: ndarray
             Array representing valid channels for each detector according to search criteria
         search_channels: dict
             Dict where keys are detector names and values are the search channels to be used for that detector
-        channel_edges: dict
-            Dict where keys are detector names and values are the channel edges for each detector
 
 
         Public Methods:
@@ -124,6 +132,8 @@ class InstrumentConfiguration(BaseConfiguration):
             Create an InstrumentConfiguration object given a valid YAML file with detectors and corresponding
             configurations
     """
+    _derived_keys = ["detector_names", "channel_edges", "channel_mask", "search_channels"]
+
     def __init__(self, instrument_name=None, detectors=None):
         """ Class constructor
 
@@ -223,6 +233,8 @@ class SearchConfiguration(BaseConfiguration):
         open:
             Open an existing configuration object in a .yaml file
     """
+    _derived_keys = ["instrument_names", "reference_name", "time_range"]
+
     def __init__(self, win_width=60, min_loglr=5, min_dur=0.064, max_dur=8.192,
                  min_step=0.064, num_steps=8, threshold=5.0, skygrid_resolution=5,
                  instruments=None, **kwargs):
@@ -324,14 +336,16 @@ class SearchConfiguration(BaseConfiguration):
 
     @property
     def instrument_names(self):
+        """(list): list of instrument names"""
         return [instrument["instrument_name"] for instrument in self["instruments"]]
-
-    @property
-    def time_range(self):
-        win_width = self.search_settings['win_width']
-        return np.array([-0.5 * win_width, 0.5 * win_width])
 
     @property
     def reference_instrument(self):
         """(str): Name of the reference instrument (always the first item in the instruments list)"""
         return self.config["instruments"][0].name
+
+    @property
+    def time_range(self):
+        """(np.ndarray): search time range (tstart, tstop)"""
+        win_width = self.search_settings['win_width']
+        return np.array([-0.5 * win_width, 0.5 * win_width])
