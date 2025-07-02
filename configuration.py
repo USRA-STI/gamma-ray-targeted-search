@@ -63,33 +63,33 @@ class BaseConfiguration(ABC):
             return getattr(self, key)
         return self.config[key]
 
-    def save(self, output_file):
+    def save(self, path):
         """Save the instrument configuration to a file
 
         Args:
-            output_file (str): Path to the output file
+            path (str): Path to the output file
 
         Returns:
             None
         """
-        with open(output_file, 'w') as file:
+        with open(path, 'w') as file:
             file.write(f"# {type(self)}\n")
             yaml.dump(self.config, file, default_flow_style=None, sort_keys=False)
 
     @classmethod
-    def open(cls, config_file):
+    def open(cls, path):
         """Create a new instance of InstrumentConfiguration given a input file
 
         Args:
-            config_file (str): Path to configuration file
+            path (str): Path to configuration file
 
         Returns:
             configured_instrument (InstrumentConfiguration): Instance of self configured as desired
         """
-        if not os.path.isfile(config_file):
+        if not os.path.isfile(path):
             raise FileNotFoundError(f"No such file: '{config_file}'")
         else:
-            with open(config_file, 'r') as file:
+            with open(path, 'r') as file:
                 config = yaml.safe_load(file)
                 return cls(**config)
 
