@@ -235,7 +235,7 @@ class SearchConfiguration(BaseConfiguration):
         open:
             Open an existing configuration object in a .yaml file
     """
-    _derived_keys = ['instrument_names', 'reference_name', 'time_range']
+    _derived_keys = ['instrument_names', 'reference_instrument', 'time_range']
 
     def __init__(self, win_width=60, min_loglr=5.0, min_dur=0.064, max_dur=8.192,
                  min_step=0.064, num_steps=8, skygrid_resolution=5.0,
@@ -295,7 +295,7 @@ class SearchConfiguration(BaseConfiguration):
     @property
     def reference_instrument(self):
         """(str): Name of the reference instrument (always the first item in the instruments list)"""
-        return self['instruments'][0].name
+        return self['instruments'][0]['instrument_name']
 
     @property
     def time_range(self):
