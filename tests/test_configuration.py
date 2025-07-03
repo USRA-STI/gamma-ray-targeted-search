@@ -28,8 +28,10 @@ import os
 import sys
 test_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(test_dir , '..')) # to be removed when gts will be installed as a module
+import copy
 import configuration
 import unittest
+import numpy as np
 
 
 class TestBaseConfiguration(unittest.TestCase):
@@ -37,7 +39,7 @@ class TestBaseConfiguration(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
        cls.ref_kwargs = {"test_str": "test", "test_int": 1, "test_float": 5.0}
-       cls.test_file = os.path.join(test_dir, "test.yml")
+       cls.test_file = os.path.join(test_dir, "base.yml")
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -67,3 +69,83 @@ class TestBaseConfiguration(unittest.TestCase):
        self.assertEqual(config.keys(), ref_config.keys())
        for ref_key, ref_value in self.ref_kwargs.items():
            self.assertEqual(config[ref_key], ref_value)
+
+
+class TestInstrumentConfiguration(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls) -> None:
+       cls.ref_kwargs = {
+           "instrument_name": "test",
+           "detectors": {
+               "t0": {"channel_edges": [0, 1, 2], "search_channels": [0, 1]},
+               "t1": {"channel_edges": [3, 4, 5], "search_channels": [1]},
+           }
+       }
+       cls.test_file = os.path.join(test_dir, "instrument.yml")
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+       if os.path.exists(cls.test_file):
+           os.remove(cls.test_file)
+
+    def test_add_detector(self):
+       config = configuration.InstrumentConfiguration(**copy.deepcopy(self.ref_kwargs))
+
+       # add a new detector
+       config.add_detector("t2", config.settings["detectors"]["t0"].copy())
+       self.assertEqual(config["detector_names"], ["t0", "t1", "t2"])
+
+       # replace existing detector
+       with self.assertWarns(Warning):
+           config.add_detector("t0", config.settings["detectors"]["t0"].copy())
+
+    def test_derived_keys(self):
+       config = configuration.InstrumentConfiguration(**self.ref_kwargs)
+
+       self.assertEqual(config["detector_names"], ["t0", "t1"])
+       self.assertEqual(config["channel_edges"], {"t0": [0, 1, 2], "t1": [3, 4, 5]})
+       self.assertEqual(config["search_channels"], {"t0": [0, 1], "t1": [1]})
+       self.assertTrue(np.all(config["channel_mask"] == np.array([True, True, False, True])))
+
+    def test_write(self):
+       ref_config = configuration.BaseConfiguration(**self.ref_kwargs)
+       ref_config.write(self.test_file)
+
+       config = configuration.BaseConfiguration.open(self.test_file)
+       self.assertEqual(config.keys(), ref_config.keys())
+       for ref_key, ref_value in self.ref_kwargs.items():
+           self.assertEqual(config[ref_key], ref_value)
+
+    def test_validate(self):
+       config = configuration.InstrumentConfiguration(**copy.deepcopy(self.ref_kwargs))
+       good_settings = copy.deepcopy(config.settings)
+
+       # test for incorrect type
+       config.settings["instrument_name"] = 0
+       with self.assertRaises(ValueError):
+           config.validate()
+       config.settings = good_settings.copy()
+
+       # test for missing settings key
+       config.settings.pop("instrument_name")
+       with self.assertRaises(ValueError):
+           config.validate()
+       config.settings = good_settings.copy()
+
+       # test for missing detector key
+       config.settings["detectors"]["t0"].pop("search_channels")
+       with self.assertRaises(ValueError):
+           config.validate()
+       config.settings = good_settings.copy()
+
+       # test that search_channels is a list of ints
+       config.settings["detectors"]["t0"]["search_channels"] = 0
+       with self.assertRaises(ValueError):
+           config.validate()
+       config.settings = good_settings.copy()
+       config.settings["detectors"]["t0"]["search_channels"] = [0.0, 1.0, 2.0]
+       with self.assertRaises(ValueError):
+           config.validate()
+       config.settings = good_settings.copy()
+
