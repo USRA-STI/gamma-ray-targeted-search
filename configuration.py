@@ -39,6 +39,20 @@ class BaseConfiguration(yaml.YAMLObject):
     Users looking for more complex behavior can inherit
     this class and define a set of derived keys
     that are constructed from the base settings.
+
+    Attributes:
+        settings (dict): dictionary with the configuration settings
+        yaml_tag (str): tag used to serialize the class within YAML files
+        _derived_keys (list): list of derived keys to be constructed
+                              from base settings.
+
+    Public Methods:
+        keys: List the available keys
+        write: Write the configuration to a yaml file
+        validate: Validate the settings dictionary
+
+    Class Methods:
+        open: Create a BaseConfiguration object given a valid YAML file
     """
     yaml_tag = "!configuration.BaseConfiguration"
 
@@ -69,8 +83,7 @@ class BaseConfiguration(yaml.YAMLObject):
             return getattr(self, key)
         return self.settings[key]
 
-    # check if this is write in the GDT api for skymaps / tte / phaii
-    def save(self, path):
+    def write(self, path):
         """Save the instrument configuration to a file
 
         Args:
@@ -105,15 +118,19 @@ class InstrumentConfiguration(BaseConfiguration):
     """Class for the instrument configuration
 
     Attributes:
-        settings (dict): Instrument settings dictionary with instrument name + detector configurations.
+        settings (dict): dictionary with the configuration settings
+        yaml_tag (str): tag used to serialize the class within YAML files
+        _derived_keys (list): list of derived keys to be constructed
+                              from base settings.
 
     Public Methods:
-        save: Save the configuration to a yaml file
+        keys: List the available keys
+        write: Write the configuration to a yaml file
+        validate: Validate the settings dictionary
         add_detector: Add a new detector and corresponding configuration
 
     Class Methods:
-        open: Create an InstrumentConfiguration object given a valid YAML file with detectors and corresponding
-              configurations
+        open: Create an InstrumentConfiguration object given a valid YAML file
     """
     yaml_tag = "!configuration.InstrumentConfiguration"
 
@@ -192,16 +209,20 @@ class SearchConfiguration(BaseConfiguration):
     """Class for the search configuration
 
     Attributes:
-        config (dict): Dictionary with the search_settings and instruments keys
+        settings (dict): dictionary with the configuration settings
+        yaml_tag (str): tag used to serialize the class within YAML files
+        _derived_keys (list): list of derived keys to be constructed
+                              from base settings.
 
     Public Methods:
-        save: Save the Results to a yaml file
+        keys: List the available keys
+        write: Write the configuration to a yaml file
+        validate: Validate the settings dictionary
         add_instrument: Add a new instrument and corresponding InstrumentConfiguration
         get_instrument: Get the instance of a specified instrument's InstrumentConfiguration
-        validate: Validate the configuration dictionary
 
     Class Methods:
-        open: Open an existing configuration object in a .yaml file
+        open: Create a SearchConfiguration object given a valid YAML file
     """
     yaml_tag = "!configuration.SearchConfiguration"
 
