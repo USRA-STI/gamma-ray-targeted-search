@@ -35,42 +35,37 @@ from data import InstrumentData
 import utils
 
 
-class TargetedScanner():
-    """Class that can perform a single or multi-instrument scan for GRBs across a specified skygrid
+class TargetedSearch():
+    """Class that can perform a single or multi-instrument search for GRBs across a specified skygrid
 
-        Attributes:
-        -----------
-            search_configuration: SearchConfiguration object
-                Instance of SearchConfiguration class with relevant settings and attributes necessary to conduct search
-            skygrid: Skygrid object
-                Instance of Skygrid class with expected sky positions and other relevant structures
-            instrument_data: Dictionary
-                Dictionary containing InstrumentData objects, keyed by instrument name, that allow scanner to access
-                counts, background, response, and other necessary data related to a particular instrument
-        Public Methods:
-        ---------------
-            add_instrument:
-                Create and add a new InstrumentData instance to scanner's instrument_data attribute
-            get_bin_starts:
-                Return the start and end times for the timebins needed to perform the scan
-            get_timebins:
-                Return a list with values for the start times and durations of each search bin
-            stack_instrument_outputs:
-                In progress. Allows multi-instrument searches to structure the inputs for Likelihood calculation
-            calculate_timebin_likelihood:
-                Extract the result of a likelihood calculation on a specific timebin across all instruments in search
-            run_search:
-                Performs a scan according to the parameters set in the search_configuration attribute and returns all
-                relevant information necessary to construct a Result object
+    Attributes:
+        search_configuration: SearchConfiguration object
+            Instance of SearchConfiguration class with relevant settings and attributes necessary to conduct search
+        skygrid: Skygrid object
+            Instance of Skygrid class with expected sky positions and other relevant structures
+        instrument_data: Dictionary
+            Dictionary containing InstrumentData objects, keyed by instrument name, that allow scanner to access
+            counts, background, response, and other necessary data related to a particular instrument
 
-        Class Methods:
-        ---------------
+    Public Methods:
+        add_instrument:
+            Create and add a new InstrumentData instance to scanner's instrument_data attribute
+        get_bin_starts:
+            Return the start and end times for the timebins needed to perform the scan
+        get_timebins:
+            Return a list with values for the start times and durations of each search bin
+        stack_instrument_outputs:
+            In progress. Allows multi-instrument searches to structure the inputs for Likelihood calculation
+        calculate_timebin_likelihood:
+            Extract the result of a likelihood calculation on a specific timebin across all instruments in search
+        run:
+            Performs a scan according to the parameters set in the search_configuration attribute and returns all
+            relevant information necessary to construct a Result object
     """
     def __init__(self, search_configuration, skygrid):
         self.search_configuration = search_configuration
         self.skygrid = skygrid
         self.instrument_data = {}
-
 
     def add_instrument(self, name, data, fitters, response_generator, frames, fit_checker, backup_fitters):
         """Create and add a new InstrumentData instance to scanner's instrument_data attribute
@@ -86,12 +81,8 @@ class TargetedScanner():
                 as input and outputs a ndarray of booleans identifying goodness of fit
             backup_fitters (list[DataCollection[BackgroundFitter]]): A list of replacement background fitters that would
                 override parameter fitters in the case of a bad fit of the data
-
-        Returns:
-            None
         """
         self.instrument_data[name] = InstrumentData(data, fitters, response_generator, frames, fit_checker, backup_fitters)
-
 
     def get_bin_starts(self, search_range, durations):
         """Extract the value of the search bins' start and end based on the reference instrument's data type
@@ -99,9 +90,9 @@ class TargetedScanner():
         Args:
             search_range (tuple): 2-tuple that includes the range start and end from which bin starts are anchored
             durations (ndarray): Array of float values representing the different durations for the targeted search
+
         Returns:
-            tstart (float): Float representing the start bin
-            tend (float): Float representing the end bin
+            (tuple[float]): Tuple with the start and end bins
         """
         reference_instrument = self.search_configuration['reference_instrument']
         reference_data = self.instrument_data[reference_instrument].data
@@ -134,7 +125,6 @@ class TargetedScanner():
             tend = search_range[1]
 
         return tstart, tend
-
 
     def get_timebins(self, t0=None):
         """Calculate the time bins used in the search. These represent the different emission durations of the search
@@ -175,19 +165,18 @@ class TargetedScanner():
 
         return timebins
 
-
     # Combine counts, backgrounds, responses into one matrix each for input to Likelihood
     def stack_instrument_outputs(self, instrument_outputs):
         """Calculate the time bins used in the search. These represent the different emission durations of the search
         shifted across the full search range using a given step size.
 
         Args:
-            instrument_outputs (Dictionary): A dictionary with keys representing instruments and values being nested
+            instrument_outputs (dict): A dictionary with keys representing instruments and values being nested
                 dictionaries with the counts, background rates, background variance, and response matrices extracted
                 from a particular timebin
 
         Returns:
-            tuple: 4 value tuple representing counts, background rates, background variance, and response for all
+            (tuple): 4 value tuple representing counts, background rates, background variance, and response for all
                 instruments to be used in the search
         """
         if len(instrument_outputs.keys()) > 1:
@@ -196,7 +185,6 @@ class TargetedScanner():
         else:
             vals = list(instrument_outputs.values())[0]
             return vals['counts'], vals['background_rates'], vals['background_variance'], vals['response']
-
 
     def calculate_timebin_likelihood(self, tstart, tstop, t0):
         """Generate the necessary result data for a specific timebin by iterating over the scanner's instruments,
@@ -208,7 +196,7 @@ class TargetedScanner():
             t0 (float): Unused, time representing the central time for the search
 
         Returns:
-            tuple: Contains necessary parameters to generate a Result object for this timebin
+            (tuple): Contains necessary parameters to generate a Result object for this timebin
         """
 
         # TODO Where to store n_templates? energybins? Are these to be hardcoded, or added as parameters?
@@ -264,15 +252,14 @@ class TargetedScanner():
 
         return result
 
-
-    def run_search(self, t0):
+    def run(self, t0):
         """Run the search for a given central time
 
         Args:
             t0 (float): Float representing the target time for the search
 
         Returns:
-            results (list[tuple]): A list of tuples from which a Result object can be generated for each timebin
+            (list[tuple]): A list of tuples from which a Result object can be generated for each timebin
         """
         timebins = self.get_timebins(t0)
         results = []
@@ -282,7 +269,6 @@ class TargetedScanner():
 
         return results
 
-
     def _align_timebins(self, timebins):
         """Ensure that the timebins that have been generated match the reference instrument's bins in the case that the
         reference instrument contains binned Phaii data
@@ -291,7 +277,7 @@ class TargetedScanner():
             timebins (list[tuple]): List of timebins with each tuple representing the start and duration of a given bin
 
         Returns:
-            timebins (list[tuple]): List of timebines with each tuple aligned to the reference instrument's binned data,
+            (list[tuple]): List of timebins with each tuple aligned to the reference instrument's binned data,
                 or the original input in the case that alignment was not needed or the reference data was unbinned
         """
         reference_instrument = self.search_configuration['reference_instrument']

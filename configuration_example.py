@@ -31,7 +31,7 @@ from rich.progress import track
 
 from configuration import InstrumentConfiguration, SearchConfiguration
 from response import GBMResponseGenerator
-from search import TargetedScanner
+from search import TargetedSearch
 from results import Results
 from utils import SkyGrid
 
@@ -48,8 +48,6 @@ from gdt.core.background.unbinned import NaivePoisson
 from gdt.missions.fermi.gbm.poshist import GbmPosHist
 from gdt.missions.fermi.gbm.tte import GbmTte
 from gdt.missions.fermi.gbm.detectors import GbmDetectors
-
-
 
 nai_edges = [0, 8, 20, 33, 51, 85, 106, 127, 128]
 bgo_edges = [0, 8, 21, 40, 65, 90, 112, 124, 128]
@@ -121,10 +119,10 @@ def goodness_of_fit(counts, background_rates):
 
 backup_fitters = []
 
-scanner = TargetedScanner(search_config, skygrid)
-scanner.add_instrument('gbm', phaiis, backfitters, response, spacecraft_frames, goodness_of_fit, backup_fitters)
+search = TargetedSearch(search_config, skygrid)
+search.add_instrument('gbm', phaiis, backfitters, response, spacecraft_frames, goodness_of_fit, backup_fitters)
 
-result_inputs = scanner.run_search(t0)
+result_inputs = search.run(t0)
 results = Results.create(len(result_inputs), template_names=["soft", "norm", "hard"])
 for i, result in enumerate(result_inputs):
     results.data[i] = result
@@ -132,8 +130,8 @@ results.save(".", "results.npz")
 
 opened_results = Results.open("results.npz")
 opened_results.data.sort(order='duration')
-for entry in opened_results.data:
-    print(entry)
+#for entry in opened_results.data:
+#    print(entry)
 
 
 # results.data = result_inputs
