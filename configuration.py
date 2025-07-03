@@ -103,7 +103,7 @@ class BaseConfiguration(yaml.YAMLObject):
             configured_instrument (InstrumentConfiguration): Instance of self configured as desired
         """
         if not os.path.isfile(path):
-            raise FileNotFoundError(f"No such file: '{config_file}'")
+            raise FileNotFoundError(f"No such file: '{path}'")
         else:
             with open(path, 'r') as file:
                 return yaml.full_load(file)
@@ -254,9 +254,10 @@ class SearchConfiguration(BaseConfiguration):
         Args:
             instrument_config (InstrumentConfiguration): An instrument configuration
         """
-        if instrument_config['instrument_name'] in self.instrument_names:
-            warnings.warn(f"Replacing instrument {instrument_config['instrument_name']}")
-            i = self.instrument_names.index(instrument_name)
+        name = instrument_config['instrument_name']
+        if name in self.instrument_names:
+            warnings.warn(f"Replacing instrument {name}")
+            i = self.instrument_names.index(name)
             self['instruments'][i] = instrument_config
         else:
             self['instruments'].append(instrument_config)
@@ -308,7 +309,7 @@ class SearchConfiguration(BaseConfiguration):
                 raise ValueError(f"{key} must be of type int or float")
 
         # check instrument configs
-        if len(self['instruments']) == 0:
+        if not isinstance(self['instruments'], list) or len(self['instruments']) == 0:
             raise ValueError(f"There must be at least one instrument included with search settings")
 
         for instrument_config in self['instruments']:
