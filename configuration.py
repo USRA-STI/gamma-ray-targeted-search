@@ -29,52 +29,55 @@ import yaml
 import numpy as np
 import warnings
 
-from abc import ABC, abstractmethod
 
-
-class BaseConfiguration(ABC):
+class BaseConfiguration(yaml.YAMLObject):
     """A base class for configuration objects.
 
-    Note:
-        This class should not be directly instantiated, but rather inherited.
-        The inherited class should define a method called ``validate()``
-        to enforce the required format of the config dictionary.
+    This class stores keyword settings in a dictionary. The class
+    can be written to and retrieved from YAML files.
+
+    Users looking for more complex behavior can inherit
+    this class and define a set of derived keys
+    that are constructed from the base settings.
     """
+    yaml_tag = "!configuration.BaseConfiguration"
+
     _derived_keys = []
 
     def __init__(self, **kwargs):
         """Class constructor
 
         Args:
-            kwargs (dict): Keyword dictionary with configuration parameters.
+            kwargs (dict): Keyword dictionary with configuration settings.
         """
-        self.config = kwargs
+        self.settings = kwargs
         self.validate()
 
     def keys(self):
         """(list): Method to retrieve available configuration keys"""
-        return list(self.config.keys()) + self._derived_keys
+        return list(self.settings.keys()) + self._derived_keys
 
     def __getitem__(self, key):
-        """Method for high level access to config dict and derived keys"""
+        """Method for high level access to settings dict and derived keys
+
+        Returns:
+            (multiple types)
+        """
         if key not in self.keys():
             raise KeyError(f"{key} is not a valid key.")
         if key in self._derived_keys:
             return getattr(self, key)
-        return self.config[key]
+        return self.settings[key]
 
+    # check if this is write in the GDT api for skymaps / tte / phaii
     def save(self, path):
         """Save the instrument configuration to a file
 
         Args:
             path (str): Path to the output file
-
-        Returns:
-            None
         """
         with open(path, 'w') as file:
-            file.write(f"# {type(self)}\n")
-            yaml.dump(self.config, file, default_flow_style=None, sort_keys=False)
+            yaml.dump(self, file, default_flow_style=None, sort_keys=False)
 
     @classmethod
     def open(cls, path):
@@ -90,52 +93,34 @@ class BaseConfiguration(ABC):
             raise FileNotFoundError(f"No such file: '{config_file}'")
         else:
             with open(path, 'r') as file:
-                config = yaml.safe_load(file)
-                return cls(**config)
+                return yaml.full_load(file)
 
-    @abstractmethod
     def validate(self):
-        """This method needs to be defined by the inheriting class. The method
-        should check if the config dictionary has the correct format and
-        raise errors when the format checks fail"""
-        pass
+        """Basic validation ensuring we have a settings dictionary"""
+        if not isinstance(self.settings, dict):
+            raise ValueError(f"Underlying settings must be a dictionary")
 
 
 class InstrumentConfiguration(BaseConfiguration):
     """Class for the instrument configuration
 
-        Attributes:
-        -----------
-        config: dict
-            Instrument configuration dictionary with instrument name + detector configurations.
-        detector_names: list
-            Names of detectors included in this configuration
-        channel_edges: dict
-            Dict where keys are detector names and values are the channel edges for each detector
-        channel_mask: ndarray
-            Array representing valid channels for each detector according to search criteria
-        search_channels: dict
-            Dict where keys are detector names and values are the search channels to be used for that detector
+    Attributes:
+        settings (dict): Instrument settings dictionary with instrument name + detector configurations.
 
+    Public Methods:
+        save: Save the configuration to a yaml file
+        add_detector: Add a new detector and corresponding configuration
 
-        Public Methods:
-        ---------------
-        save:
-            Save the configuration to a yaml file
-        add_detector:
-            Add a new detector and corresponding configuration
-
-
-        Class Methods:
-        ---------------
-        open:
-            Create an InstrumentConfiguration object given a valid YAML file with detectors and corresponding
-            configurations
+    Class Methods:
+        open: Create an InstrumentConfiguration object given a valid YAML file with detectors and corresponding
+              configurations
     """
+    yaml_tag = "!configuration.InstrumentConfiguration"
+
     _derived_keys = ['detector_names', 'channel_edges', 'channel_mask', 'search_channels']
 
     def __init__(self, instrument_name=None, detectors=None):
-        """ Class constructor
+        """Class constructor
 
         Args:
             instrument_name (str): Instrument name
@@ -150,11 +135,8 @@ class InstrumentConfiguration(BaseConfiguration):
 
         Args:
             detector_name (str): Detector name
-            detector_config (dict): Dictionary representing the configuration for this detector. Must contain keys for
-                channel_edges and search_channels
-
-        Returns:
-            None
+            detector_config (dict): Dictionary representing the configuration for this detector.
+                Must contain keys for channel_edges and search_channels.
         """
         if detector_name in self['detectors']:
             warnings.warn(f"Replacing detector {detector_name}")
@@ -163,11 +145,12 @@ class InstrumentConfiguration(BaseConfiguration):
 
     @property
     def detector_names(self):
+        """(list): List of detector names"""
         return list(self['detectors'].keys())
 
     @property
     def channel_mask(self):
-        """Construct the mask of allowed detector channels for a search"""
+        """(numpy.ndarray): Construct the mask of allowed detector channels for a search"""
         mask = []
         for det_config in self['detectors'].values():
             mask.append([channel in det_config['search_channels']
@@ -176,19 +159,20 @@ class InstrumentConfiguration(BaseConfiguration):
 
     @property
     def search_channels(self):
+        """(dict): Dictionary with search_channels keyed accord to detector names"""
         return {det: det_config['search_channels'] for det, det_config in self['detectors'].items()}
 
     @property
     def channel_edges(self):
+        """(dict): Dictionary with channel_edges keyed accord to detector names"""
         return {det: det_config['channel_edges'] for det, det_config in self['detectors'].items()}
 
     def validate(self):
         """Ensure configuration meets expected structure"""
-        if not isinstance(self.config, dict):
-            raise ValueError(f"Underlying configuration must be a dictionary")
+        super().validate()
 
         for key in ['instrument_name', 'detectors']:
-            if key not in self.config:
+            if key not in self.keys():
                 raise ValueError(f"Configuration missing '{key}'")
 
         if not isinstance(self['instrument_name'], str):
@@ -207,40 +191,26 @@ class InstrumentConfiguration(BaseConfiguration):
 class SearchConfiguration(BaseConfiguration):
     """Class for the search configuration
 
-        Attributes:
-        -----------
-        config: dict
-            Dictionary with the search_settings and instruments keys
-        instrument_names: list
-            Names of available instruments from keys in instrument_configs
-        reference_instrument: str
-            Key of the instrument to be used as a reference during the search
-        time_range: np.array
-            Time range associated with the search
-            Minimum bin duration
+    Attributes:
+        config (dict): Dictionary with the search_settings and instruments keys
 
-        Public Methods:
-        ---------------
-        save:
-            Save the Results to a yaml file
-        add_instrument:
-            Add a new instrument and corresponding InstrumentConfiguration
-        get_instrument:
-            Get the instance of a specified instrument's InstrumentConfiguration
-        validate:
-            Validate the configuration dictionary
+    Public Methods:
+        save: Save the Results to a yaml file
+        add_instrument: Add a new instrument and corresponding InstrumentConfiguration
+        get_instrument: Get the instance of a specified instrument's InstrumentConfiguration
+        validate: Validate the configuration dictionary
 
-        Class Methods:
-        ---------------
-        open:
-            Open an existing configuration object in a .yaml file
+    Class Methods:
+        open: Open an existing configuration object in a .yaml file
     """
+    yaml_tag = "!configuration.SearchConfiguration"
+
     _derived_keys = ['instrument_names', 'reference_instrument', 'time_range']
 
     def __init__(self, win_width=60, min_loglr=5.0, min_dur=0.064, max_dur=8.192,
                  min_step=0.064, num_steps=8, skygrid_resolution=5.0,
                  instruments=None, **kwargs):
-        """ Class constructor
+        """Class constructor
 
         Args:
             win_width (float): Width of the window. Default: 60
@@ -251,7 +221,7 @@ class SearchConfiguration(BaseConfiguration):
             num_steps (int): Number of steps. Default: 8
             skygrid_resolution (float): Resolution for skygrid. Default: 5.0
             instruments (list): A list of instrument configurations
-            **kwargs (optional): Optional keyword arguments
+            **kwargs (optional): Optional keyword arguments for user-defined fields
         """
         super().__init__(win_width=win_width, min_loglr=min_loglr, min_dur=min_dur,
                          max_dur=max_dur, min_step=min_step, num_steps=num_steps,
@@ -289,7 +259,7 @@ class SearchConfiguration(BaseConfiguration):
 
     @property
     def instrument_names(self):
-        """(list): list of instrument names"""
+        """(list): List of instrument names"""
         return [instrument['instrument_name'] for instrument in self['instruments']]
 
     @property
@@ -299,19 +269,21 @@ class SearchConfiguration(BaseConfiguration):
 
     @property
     def time_range(self):
-        """(np.ndarray): search time range (tstart, tstop)"""
+        """(numpy.ndarray): Search time range (tstart, tstop)"""
         return np.array([-0.5 * self['win_width'], 0.5 * self['win_width']])
 
     def validate(self):
         """Ensure configuration meets expected structure"""
+        super().validate()
+
         # enforce integer types
         for key in ['num_steps']:
-            if not isinstance(self.config[key], int):
+            if not isinstance(self[key], int):
                 raise ValueError(f"{key} must be of type int")
 
         # enforce number types (int or float)
         for key in ['win_width', 'min_loglr', 'min_dur', 'max_dur', 'min_step', 'skygrid_resolution']:
-            if not isinstance(self.config[key], int) and not isinstance(self.config[key], float):
+            if not isinstance(self[key], int) and not isinstance(self[key], float):
                 raise ValueError(f"{key} must be of type int or float")
 
         # check instrument configs
