@@ -31,9 +31,9 @@ import numpy as np
 class InstrumentData:
     """Class for storing necessary data components for targeted search, for a single instrument."""
 
-
     def __init__(self, data, fitters, response_generator, spacecraft_frames, goodness_of_fit, backup_fitters):
         """ Class constructor
+
         Args:
             data (DataCollection[TTE|Phaii]): Data Collection to extract counts and exposure for this instrument
             fitters (DataCollection[BackgroundFitter]): Data Collection to extract background counts and variance
@@ -44,9 +44,6 @@ class InstrumentData:
                 as input and outputs a ndarray of booleans identifying goodness of fit
             backup_fitters (list[DataCollection[BackgroundFitter]]): A list of replacement background fitters that would
                 override parameter fitters in the case of a bad fit of the data
-
-        Returns:
-            None
         """
         # TODO Backup fitters should be an array of DataCollections of BackFitters to be used in case we find the
         #      background fit is not suitable
@@ -72,18 +69,15 @@ class InstrumentData:
         self.goodness_of_fit = goodness_of_fit
         self.backup_fitters = backup_fitters
 
-
     @property
     def detectors(self):
         """list[str] representing the names of the instrument's detectors"""
         return self.data.items
 
-
     @property
     def ebounds(self):
         """list[Ebounds] representing the energy bounds of each detector in the instrument"""
         return self.data.ebounds()
-
 
     def counts(self, tstart, tstop):
         """Extracts the counts and exposure from this instrument given a timebin across all detectors
@@ -103,7 +97,6 @@ class InstrumentData:
             exposure.append(spec.exposure[0])
 
         return np.ravel(counts), np.ravel(exposure)
-
 
     def background_rates(self, tstart, tstop, exposure):
         """Extracts the background rates and background variance for this instrument across all detectors
@@ -130,7 +123,6 @@ class InstrumentData:
 
         return np.ravel(counts), np.ravel(counts_var), np.ravel(good)
 
-
     def load_response(self, tstart, tstop, skygrid, earthmask=False):
         """Extracts the expected response matrix for this instrument, representing all detectors
 
@@ -145,13 +137,11 @@ class InstrumentData:
         """
         return self.response_generator.load_response(tstart, tstop)
 
-
     def load_skypos_response(self, tstart, tstop, target_skypos, reference_frame, earthmask=False):
         # TODO Additional function to compute response given a target skypos. Should be used by scanner when this
         #      instrument is not the reference instrument
         # Note: Can this function take just the spacecraft frame itself rather than calculating it
         pass
-
 
     def get_spacecraft_frame(self, time):
         """Extracts this instrument's spacecraft frame that is the closest match to where it would be at a given time
@@ -167,13 +157,11 @@ class InstrumentData:
 
         return spacecraft_frame
 
-
     def get_timebin_offset(self, reference_frame, target_skypos):
         # TODO Calculate offset based on target sky pos, reference_frame, finding the frame in this instance's frames
         #      that would correspond to when the energy beam would reach this instrument
         #      Return a float representing the timebin offset, along with the spacecraft frame associated with it.
         pass
-
 
     def format_data(self, instrument_config, tstart, tstop, skygrid, shape_data):
         """Formats the instrument's counts, background rates, background variance, and response, including masking only
@@ -219,7 +207,6 @@ class InstrumentData:
             'response': rsp[:, :, mask]
         }
 
-
     def format_data_by_reference(self, instrument_config, tstart, tstop, reference_frame, skygrid, shape_data):
         """Formats the instrument's counts, background rates, background variance, and response, including masking only
         good bins and the earth mask, for the scanner to use in its search. Used if this is an additional instrument,
@@ -237,7 +224,7 @@ class InstrumentData:
                 should be a better way to integrate these parameters
 
         Returns:
-            dict: A dictionary with keys and values for the counts, background rates, background variance, and response
+            (dict): A dictionary with keys and values for the counts, background rates, background variance, and response
                 extracted from this instrument's data classes
         """
         n_templates = shape_data['n_templates']

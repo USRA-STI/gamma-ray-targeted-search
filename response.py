@@ -46,25 +46,20 @@ def getGbmDetectorType(detector):
 
 
 class BaseResponseGenerator(ABC):
-    """Abstract class that can generate the response matrix for the TargetedScanner
+    """Abstract class that can generate the response matrix for the TargetedSearch
 
     Attributes:
-    -----------
         detectors (list[str]): List of detector names
         skygrid (Skygrid): Instance of Skygrid class with expected sky positions and other relevant structures
         spacecraft_frames (SpacecraftFrames): The spacecraft frames for the instrument
-    Public Methods:
-    ---------------
-        load_response: Abstract method to compute the response matrix for a given time bin
 
-    Class Methods:
-    ---------------
+    Public Methods:
+        load_response: Abstract method to compute the response matrix for a given time bin
     """
     def __init__(self, detectors, skygrid, spacecraft_frames):
         self.detectors = detectors
         self.skygrid = skygrid
         self.spacecraft_frames = spacecraft_frames
-
 
     @abstractmethod
     def load_response(self, tstart, tstop):
@@ -72,33 +67,30 @@ class BaseResponseGenerator(ABC):
 
 
 class GBMResponseGenerator(BaseResponseGenerator):
-    """GBM implementation of the ResponseGenerator class that can generate the response matrix for the TargetedScanner
+    """GBM implementation of the ResponseGenerator class that can generate the response matrix for the TargetedSearch
     when using the GBM instrument
 
     Attributes:
-    -----------
         detectors (list[str]): List of detector names
         skygrid (Skygrid): Instance of Skygrid class with expected sky positions and other relevant structures
         spacecraft_frames (SpacecraftFrames): The spacecraft frames for the instrument
         t0 (float): Central search time
         templates_directory (str): String representing the location where response templates are stored
+
     Public Methods:
-    ---------------
         load_response: Method to compute the response matrix for a given time bin
         load_direct_template: Method to compute the direct response matrix for a given time bin
         load_atmo_template: Method to compute the atmospheric response matrix for a given detector and azimuth
         get_available_azimuths: Method to check which azimuths are available in the templates for a given detector
         get_atmospheric_response: Method to compute the atmospheric response matrix for a given detector at a given
             azimuth and zenith position
-
-    Class Methods:
-    ---------------
     """
     zen_margin = 5.0
     rocking_zen = 130.0
 
     def __init__(self, detectors, skygrid, spacecraft_frames, t0, templates_directory):
         """ Class constructor
+
         Args:
             detectors (list[str]): List of detector names
             skygrid (Skygrid): The skygrid this response should be generated over
@@ -106,9 +98,6 @@ class GBMResponseGenerator(BaseResponseGenerator):
                 generated for
             t0 (float): The central time of the search
             templates_directory (str): String representing the path where the templates for the GBM response are stored
-
-        Returns:
-            None
         """
         super().__init__(detectors, skygrid, spacecraft_frames)
         self.t0 = t0
@@ -122,8 +111,8 @@ class GBMResponseGenerator(BaseResponseGenerator):
             tstop (float): End of the time bin
 
         Returns:
-            response (ndarray): Matrix that contains the expected response for this instrument
-            earthmask (ndarray): Matrix that represent which sky positions were occulted by the earth at the specified bin
+            (tuple[ndarray]): tuple with matrices for instrument response and the Earth mask representing
+                sky positions that were occulted by the earth at the specified bin
         """
         tcenter = 0.5 * (tstart + tstop) + self.t0
         tcenter = Time(tcenter, format='fermi')
