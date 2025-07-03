@@ -1,3 +1,29 @@
+# Copyright 2017-2025 by Universities Space Research Association (USRA). All rights reserved.
+#
+# Developed by: William Cleveland, Adam Goldstein, and Alex Goberna
+#               Universities Space Research Association
+#               Science and Technology Institute
+#               https://sti.usra.edu
+#
+# Developed by: Daniel Kocevski and Joshua Wood
+#               National Aeronautics and Space Administration (NASA)
+#               Marshall Space Flight Center
+#               Astrophysics Branch (ST-12)
+#
+# Developed by: Lorenzo Scotton
+#               University of Alabama in Huntsville
+#               Center for Space Plasma and Aeronomic Research
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+# in compliance with the License. You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software distributed under the License
+# is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied. See the License for the specific language governing permissions and limitations under the
+# License.
+#
 import os
 import numpy as np
 from abc import ABC, abstractmethod
@@ -9,6 +35,7 @@ from utils import getGeoCoordinates, createEarthMask
 
 det_index = {'n0': 0, 'n1': 1, 'n2': 2, 'n3':3, 'n4': 4, 'n5': 5, 'n6': 6, 'n7': 7, 'n8': 8, 'n9': 9, 'na': 10, 'nb': 11, 'b0': 0, 'b1': 1}
 
+# NOTE: swap_cols and the GBM detector indices / mapping methods should be moved to the GBM response generator because they are GBM specific
 
 def swap_cols(rsp):
     """Swaps old response matrix format for the new column ordering
