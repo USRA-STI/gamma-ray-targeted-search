@@ -76,6 +76,7 @@ class TestBaseConfiguration(unittest.TestCase):
        with self.assertRaises(FileNotFoundError):
            config = configuration.BaseConfiguration.open("bad_path")
 
+
 class TestInstrumentConfiguration(unittest.TestCase):
 
     @classmethod
