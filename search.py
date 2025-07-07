@@ -67,7 +67,7 @@ class TargetedSearch():
         self.skygrid = skygrid
         self.instrument_data = {}
 
-    def add_instrument(self, name, data, fitters, response_generator, frames, fit_checker, backup_fitters):
+    def add_instrument(self, name, data, fitters, response_generator, frames, fit_checker):
         """Create and add a new InstrumentData instance to scanner's instrument_data attribute
 
         Args:
@@ -82,7 +82,7 @@ class TargetedSearch():
             backup_fitters (list[DataCollection[BackgroundFitter]]): A list of replacement background fitters that would
                 override parameter fitters in the case of a bad fit of the data
         """
-        self.instrument_data[name] = InstrumentData(data, fitters, response_generator, frames, fit_checker, backup_fitters)
+        self.instrument_data[name] = InstrumentData(data, fitters, response_generator, frames, fit_checker)
 
     def get_bin_starts(self, search_range, durations):
         """Extract the value of the search bins' start and end based on the reference instrument's data type
@@ -180,11 +180,10 @@ class TargetedSearch():
                 instruments to be used in the search
         """
         if len(instrument_outputs.keys()) > 1:
-            # TODO Implement multi instrument search stacking of outputs
-            print('Multi-instrument search not currently supported')
+            raise NotImplemented('Multi-instrument search not currently supported')
         else:
             vals = list(instrument_outputs.values())[0]
-            return vals['counts'], vals['background_rates'], vals['background_variance'], vals['response']
+            return vals
 
     def calculate_timebin_likelihood(self, tstart, tstop, t0):
         """Generate the necessary result data for a specific timebin by iterating over the scanner's instruments,
@@ -231,20 +230,20 @@ class TargetedSearch():
         tcenter = tstart + duration / 2.0
 
         # TODO Move to Likelihood class?
-        coords_max = utils.findLocationOfMaxLikelihood(self.skygrid, like, reference_frame)
+        coords_max = utils.find_location_of_max_likelihood(self.skygrid, like, reference_frame)
         # convert to degrees for results storage
         ra_max = coords_max.icrs.ra[0].deg
         dec_max = coords_max.icrs.dec[0].deg
         # azimuth_max = coords_max.az.deg
         # zenith_max = 90.0 - coords_max.el.deg
 
-        # sun_angle = utils.getSunAngle(coords_max, Time(t0, format='fermi'))
+        # sun_angle = utils.get_sun_angle(coords_max, Time(t0, format='fermi'))
         # geo_angle = reference_frame.geocenter.separation(coords_max)[0]
 
         # TODO This function relies on single-instrument context; earthmask for multi-instrument search would need to be
         #      generated or composed.
         _, earthmask = instrument_data.load_response(tstart, tstop, self.skygrid)
-        log_sky_prior = utils.skyPrior(self.skygrid._points[:,earthmask], reference_frame, None, None)
+        log_sky_prior = utils.sky_prior(self.skygrid._points[:,earthmask], reference_frame, None, None)
         coinclr = like.coinclr(log_sky_prior, llratio=like.llr)
 
         result = (tcenter, duration, ra_max, dec_max, like.max_template, like.photon_fluence/duration, *like.chisq,

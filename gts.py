@@ -360,7 +360,7 @@ def phosphorescenceVeto(counts, background, background_error):
 
     return pe_veto
     
-def skyPrior(grid, spacecraft_frame, small_map_prob=None, skymap=None):
+def sky_prior(grid, spacecraft_frame, small_map_prob=None, skymap=None):
     """ Calculate the sky prior given a map, or do uniform prior, in the spacecraft frame.
     The prior is in equatorial, so we need to rotate it to spacecraft.
 
@@ -425,7 +425,7 @@ def getSpacecraftFrame(spacecraft_frames, t0, tcenter):
 
     return spacecraft_frame
 
-def getSunAngle(coordinate_max, t0):
+def get_sun_angle(coordinate_max, t0):
     """ Calculates the sun angle relative to a location.
 
     Note: this could probably move to the results class.
@@ -445,7 +445,7 @@ def getSunAngle(coordinate_max, t0):
 
     return sun_angle
 
-def findLocationOfMaxLikelihood(skyGrid, like, spacecraft_frame):
+def find_location_of_max_likelihood(skyGrid, like, spacecraft_frame):
     """ Calculates the location on the sky that maximizes the likelihood.
 
     Args:
@@ -560,7 +560,7 @@ def createLocalization(tcenter, duration, template, search, cls, systematic, rem
     prob = np.exp(like.llr - np.max(like.llr))
 
     # project to a healpix grid
-    proj_prob, _ = utils.grid2healpix(
+    proj_prob, _ = utils.grid_to_healpix(
         prob[template,:], search['skygrid']._points,
         spacecraft_frame, nside_out=nside_proj)
 
@@ -710,8 +710,8 @@ def runSearch(data, response, spacecraft_frames, t0, background_range, skyResolu
         spacecraft_frame = spacecraft_frames.at(t0 + tcenter * u.second)
 
         # Mask out the Earth from the response
-        geo_azimuth, geo_zenith, geo_radius = utils.getGeoCoordinates(spacecraft_frame)
-        earthmask = utils.createEarthMask(skyGrid._points, geo_azimuth, geo_zenith, geo_radius)
+        geo_azimuth, geo_zenith, geo_radius = utils.get_geo_coordinates(spacecraft_frame)
+        earthmask = utils.create_earth_mask(skyGrid._points, geo_azimuth, geo_zenith, geo_radius)
         masked_rsp = rsp[:,earthmask,:]
 
         # Format the data to optimize the search
@@ -725,11 +725,11 @@ def runSearch(data, response, spacecraft_frames, t0, background_range, skyResolu
         like.calculate(counts, background, background_error, masked_rsp)
 
         # Find the sky position that yielded the highest signal significance
-        coords_max = findLocationOfMaxLikelihood(skyGrid, like, spacecraft_frame)
+        coords_max = find_location_of_max_likelihood(skyGrid, like, spacecraft_frame)
 
         # Get the angle between the max position and the Earth and Sun
         geo_angle = spacecraft_frame.geocenter.separation(coords_max)[0]
-        sun_angle = getSunAngle(coords_max, t0)
+        sun_angle = get_sun_angle(coords_max, t0)
 
         # Projections needed for the small skymaps
         if small_map_prob is not None:
@@ -739,7 +739,7 @@ def runSearch(data, response, spacecraft_frames, t0, background_range, skyResolu
             grid = np.array((phi, 0.5 * np.pi - theta))
 
             # Create an Earth mask
-            earthmask_small = utils.createEarthMask(grid, geo_azimuth, geo_zenith, geo_radius)
+            earthmask_small = utils.create_earth_mask(grid, geo_azimuth, geo_zenith, geo_radius)
             n_visible_pixels = earthmask_small.sum()
 
             # Likelihood results that need to be projected
@@ -764,7 +764,7 @@ def runSearch(data, response, spacecraft_frames, t0, background_range, skyResolu
             small_map_earthmask = None
 
         # Apply sky prior
-        log_sky_prior = skyPrior(skyGrid._points[:,earthmask], spacecraft_frame, small_map_earthmask, skymap)
+        log_sky_prior = sky_prior(skyGrid._points[:,earthmask], spacecraft_frame, small_map_earthmask, skymap)
         coinclr = like.coinclr(log_sky_prior, llratio=llratio)
 
         # Placeholder for now
@@ -787,7 +787,7 @@ def runSearch(data, response, spacecraft_frames, t0, background_range, skyResolu
             coords = (skyGrid._points[0,earthmask], skyGrid._points[1,earthmask])
 
             # Get the flux upper limits
-            pflux_ul, pix = utils.grid2healpix(values, coords, spacecraft_frame, nside_out=upperlimit_nside)
+            pflux_ul, pix = utils.grid_to_healpix(values, coords, spacecraft_frame, nside_out=upperlimit_nside)
 
             # Keep only the largest upper limits found during the search for each spectral template
             imap = upperlimit_durations.index(duration)

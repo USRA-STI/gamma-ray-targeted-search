@@ -103,7 +103,7 @@ class SkyGrid():
 
         return np.deg2rad(np.array(rows).T)
 
-def getGeoCoordinates(frame, unit='rad'):
+def get_geo_coordinates(frame, unit='rad'):
     """ Convert the geocenter coordinates from celestial to spacecraft coordinates
 
     Args:
@@ -119,7 +119,7 @@ def getGeoCoordinates(frame, unit='rad'):
 
     return geo_azimuth[0].to_value(unit), geo_zenith[0].to_value(unit), frame.earth_angular_radius.to_value(unit)
 
-def createEarthMask(points, geo_azimuth, geo_zenith, geo_radius):
+def create_earth_mask(points, geo_azimuth, geo_zenith, geo_radius):
     """ Creates a mask with visible locations set to True and non-visible
     locations blocked by the Earth set to False
 
@@ -136,7 +136,7 @@ def createEarthMask(points, geo_azimuth, geo_zenith, geo_radius):
     return angular_separation(geo_azimuth, 0.5 * np.pi - geo_zenith,
                               points[0,:], 0.5 * np.pi - points[1,:]) > geo_radius
 
-def grid2healpix(values, coords, spacecraft_frame, nside_out=64,
+def grid_to_healpix(values, coords, spacecraft_frame, nside_out=64,
                  coord_type='instrument', return_proj_coord=False):
     """ Convert grid points to healpix pixel values
             
@@ -184,7 +184,6 @@ def grid2healpix(values, coords, spacecraft_frame, nside_out=64,
     
     return proj_values, proj_pix
 
-
 def update_tte_trigtime(tte, t0):
     """Updates the trigtime for triggered and continuous TTE files.
     This is needed to ensure all times are relative to the time of
@@ -216,8 +215,7 @@ def update_tte_trigtime(tte, t0):
                                 event_deadtime=tte.event_deadtime,
                                 overflow_deadtime=tte.overflow_deadtime)
 
-
-def findLocationOfMaxLikelihood(skyGrid, like, spacecraft_frame):
+def find_location_of_max_likelihood(skyGrid, like, spacecraft_frame):
     """ Calculates the location on the sky that maximizes the likelihood.
 
     Args:
@@ -237,8 +235,7 @@ def findLocationOfMaxLikelihood(skyGrid, like, spacecraft_frame):
     # return ra_max, dec_max
     return coordinate_max
 
-
-def skyPrior(grid, spacecraft_frame, small_map_prob=None, skymap=None):
+def sky_prior(grid, spacecraft_frame, small_map_prob=None, skymap=None):
     """ Calculate the sky prior given a map, or do uniform prior, in the spacecraft frame.
     The prior is in equatorial, so we need to rotate it to spacecraft.
 
@@ -282,8 +279,7 @@ def skyPrior(grid, spacecraft_frame, small_map_prob=None, skymap=None):
 
     return logskyprior
 
-
-def getSunAngle(coordinate_max, t0):
+def get_sun_angle(coordinate_max, t0):
     """ Calculates the sun angle relative to a location.
 
     Note: this could probably move to the results class.
