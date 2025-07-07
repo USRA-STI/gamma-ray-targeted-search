@@ -28,46 +28,65 @@ import os
 import numpy as np
 
 
-class InstrumentData:
-    """Class for storing necessary data components for targeted search, for a single instrument."""
+class FitStatus:
+    """Placeholder class for fit status behavior
 
-    def __init__(self, data, fitters, response_generator, spacecraft_frames, goodness_of_fit, backup_fitters):
+    Attributes:
+        good (ndarray): Array of static goodness-of-fit values (always True for now)
+
+    Public Methods:
+        status: Retrieves goodness-of-fit status with True = good, False = bad.
+    """
+    def __init__(self, shape):
+        self.good = np.ones(shape, dtype=bool)
+
+    def status(self, tstart, tstop):
+        """(ndarray): Goodness-of-fit array"""
+        return self.good
+
+
+class InstrumentData:
+    """Class for storing necessary data components for targeted search, for a single instrument.
+
+    Attributes:
+        data (DataCollection): Collection of data for each detector
+        fitters (DataCollection): Collection of background fits for each detector
+        response (BaseResponse): Instrument response object
+        frames (SpacecraftFrame): Position history object
+        goodness_of_fit (FitStatus): Collection of background fit statuses for each detector
+
+    Public Methods:
+        format_data: Retrieve data counts, background counts, background variance, and goodness of fit for a time interval
+        format_data_by_reference: Similar to format_data, but the time interval is calculated relative to another instrument
+    """
+    def __init__(self, data, fitters, response, spacecraft_frames, goodness_of_fit):
         """ Class constructor
 
         Args:
             data (DataCollection[TTE|Phaii]): Data Collection to extract counts and exposure for this instrument
             fitters (DataCollection[BackgroundFitter]): Data Collection to extract background counts and variance
-            response_generator (BaseResponseGenerator): Subclass of BaseResponseGenerator that can represent this
-                instrument's expected response at a particular timebin
-            frames (SpacecraftFrame): Object with position history to extract spacecraft frames at a particular time
-            goodness_of_fit (Callable[[ndarray, ndarray], ndarray]): TODO function that takes counts and background rates
-                as input and outputs a ndarray of booleans identifying goodness of fit
-            backup_fitters (list[DataCollection[BackgroundFitter]]): A list of replacement background fitters that would
-                override parameter fitters in the case of a bad fit of the data
+            response (BaseResponse): Instrument response object
+            frames (SpacecraftFrame): Position history object
+            goodness_of_fit (FitStatus): Collection of background fit statuses for each detector
         """
-        # TODO Backup fitters should be an array of DataCollections of BackFitters to be used in case we find the
-        #      background fit is not suitable
-
         # Sanity checks
-        background_bounds = [fitter._data_obj.ebounds for fitter in fitters]
         for i, det in enumerate(data.items):
-            match_det = data.items[i] == fitters.items[i] == response_generator.detectors[i]
-            match_ebounds = data.ebounds()[i].low_edges() == background_bounds[i].low_edges() \
-                            and data.ebounds()[i].high_edges() == background_bounds[i].high_edges()
-            # TODO Convert print statements to warnings or exceptions as necessary
+            match_det = data.items[i] == fitters.items[i] == response.detectors[i]
+            match_ebounds = data.ebounds()[i].low_edges() == fitters.get_item(det)._data_obj.ebounds.low_edges() \
+                            and data.ebounds()[i].high_edges() == fitters.get_item(det)._data_obj.ebounds.high_edges()
+
             if not match_det:
-                print("Warning: Detectors are not in order across input data, backfitters, or response generator."
-                      "Please check to ensure correct ordering.")
+                raise ValueError("Detectors are not in order across input data, backfitters, or response generator. "
+                                 "Please check to ensure correct ordering.")
             if not match_ebounds:
-                print("Warning: Energy bounds do not match across input data and backfitters. Please check to ensure "
-                      "inputs are valid.")
+                raise ValueError("Energy bounds do not match across input data and backfitters. "
+                                 "Please check to ensure inputs are valid.")
 
         self.data = data
         self.fitters = fitters
-        self.response_generator = response_generator
+        self.response = response
         self.spacecraft_frames = spacecraft_frames
         self.goodness_of_fit = goodness_of_fit
-        self.backup_fitters = backup_fitters
 
     @property
     def detectors(self):
@@ -78,50 +97,6 @@ class InstrumentData:
     def ebounds(self):
         """list[Ebounds] representing the energy bounds of each detector in the instrument"""
         return self.data.ebounds()
-
-    def counts(self, tstart, tstop):
-        """Extracts the counts and exposure from this instrument given a timebin across all detectors
-
-        Args:
-            tstart (float): Start of the time bin
-            tstop (float): End of the time bin
-
-        Returns:
-            tuple(ndarray, ndarray): Tuple consisting of two arrays, one for counts and one for exposure, extracted
-                from this instrument
-
-        """
-        counts, exposure = [], []
-        for spec in self.data.to_spectrum(time_range=(tstart, tstop)):
-            counts.append(spec.counts)
-            exposure.append(spec.exposure[0])
-
-        return np.ravel(counts), np.ravel(exposure)
-
-    def background_rates(self, tstart, tstop, exposure):
-        """Extracts the background rates and background variance for this instrument across all detectors
-
-        Args:
-            tstart (float): Start of the time bin
-            tstop (float): End of the time bin
-            exposure (list[float]): List of exposures for each detector
-
-        Returns:
-            tuple (ndarray, ndarray, ndarray): A tuple consisting of the matrices of background rates and variance, and
-                an ndarray of booleans representing the goodness of fit for that detector at the given time bin
-        """
-        tstart = np.atleast_1d(tstart)
-        tstop = np.atleast_1d(tstop)
-
-        counts, counts_var, good = [], [], []
-        for i, fitter in enumerate(self.fitters):
-            rates, rate_uncert = fitter._method.interpolate(tstart, tstop)
-            counts.append(rates[0] * exposure[i])
-            counts_var.append(0.5 * (rate_uncert[0] * exposure[i]) ** 2)
-            # TODO Replace with correct TTE/PHAII counts for goodness of fit.
-            good.append(self.goodness_of_fit(counts, rates))
-
-        return np.ravel(counts), np.ravel(counts_var), np.ravel(good)
 
     def load_response(self, tstart, tstop, skygrid, earthmask=False):
         """Extracts the expected response matrix for this instrument, representing all detectors
@@ -135,13 +110,13 @@ class InstrumentData:
         Returns:
             ndarray: A matrix representing the expected response at a given timebin, representing all detectors
         """
-        return self.response_generator.load_response(tstart, tstop)
+        return self.response.load_response(tstart, tstop)
 
     def load_skypos_response(self, tstart, tstop, target_skypos, reference_frame, earthmask=False):
         # TODO Additional function to compute response given a target skypos. Should be used by scanner when this
         #      instrument is not the reference instrument
         # Note: Can this function take just the spacecraft frame itself rather than calculating it
-        pass
+        raise NotImplemented("Loading response for a sky position is not implemented yet.")
 
     def get_spacecraft_frame(self, time):
         """Extracts this instrument's spacecraft frame that is the closest match to where it would be at a given time
@@ -161,9 +136,9 @@ class InstrumentData:
         # TODO Calculate offset based on target sky pos, reference_frame, finding the frame in this instance's frames
         #      that would correspond to when the energy beam would reach this instrument
         #      Return a float representing the timebin offset, along with the spacecraft frame associated with it.
-        pass
+        return 0
 
-    def format_data(self, instrument_config, tstart, tstop, skygrid, shape_data):
+    def format_data(self, tstart, tstop):
         """Formats the instrument's counts, background rates, background variance, and response, including masking only
         good bins and the earth mask, for the scanner to use in its search. Used if this is the reference instrument
         used by the scanner
@@ -177,37 +152,28 @@ class InstrumentData:
                 should be a better way to integrate these parameters
 
         Returns:
-            dict: A dictionary with keys and values for the counts, background rates, background variance, and response
-                extracted from this instrument's data classes
+            (tuple[ndarray]): A tuple with counts, background counts, background variance, and background goodness-of-fit
         """
-        n_templates = shape_data['n_templates']
+        counts, background_counts, background_var, good = [], [], [], []
 
-        channel_mask = instrument_config.channel_mask
-        counts, exposure = self.counts(tstart, tstop)
+        for det in self.detectors:
 
-        bkgd_rates, bkgd_variance, good = self.background_rates(tstart, tstop, exposure)
+            # get data counts during the interval (tstart, tstop)
+            spec = self.data.get_item(det).to_spectrum(time_range=(tstart, tstop))
+            counts.append(spec.counts)
+            exposure = spec.exposure[0]
 
-        # Get full skygrid, templates response
-        response, earthmask = self.load_response(tstart, tstop, skygrid)
-        # TODO What if instrument response skygrid != search skygrid? Currently, load_response does not use skygrid
-        #      or earthmask arguments
-        rsp_templates, n_skygrid, _, _ = response.shape
+            # estimate background counts during the interval (tstart, tstop)
+            rates, rate_uncert = self.fitters.get_item(det)._method.interpolate(
+                np.array([tstart]), np.array([tstop]))
+            background_counts.append(rates[0] * exposure)
+            background_var.append(0.5 * (rate_uncert[0] * exposure) ** 2)
 
-        # NOTE: Why get n_skygrid from response, when n_templates is static, and n_skygrid can be grabbed from
-        # scanner's skygrid attribute?
-        rsp = response.reshape(n_templates, n_skygrid, -1)
-        rsp = rsp[:, earthmask, :]
+            good.append(self.goodness_of_fit.get_item(det).status(tstart, tstop))
 
-        mask = channel_mask & good
+        return np.ravel(counts), np.ravel(background_counts), np.ravel(background_var), np.ravel(good)
 
-        return {
-            'counts': counts[mask],
-            'background_rates': bkgd_rates[mask],
-            'background_variance': bkgd_variance[mask],
-            'response': rsp[:, :, mask]
-        }
-
-    def format_data_by_reference(self, instrument_config, tstart, tstop, reference_frame, skygrid, shape_data):
+    def format_data_by_reference(self, tstart, tstop, reference_frame, skygrid):
         """Formats the instrument's counts, background rates, background variance, and response, including masking only
         good bins and the earth mask, for the scanner to use in its search. Used if this is an additional instrument,
         and not the reference instrument, for the scanner
@@ -215,42 +181,27 @@ class InstrumentData:
         TODO Implementation in progress, pseudocode only for now
 
         Args:
-            instrument_config (InstrumentConfiguration): The configuration for this instrument
             tstart (float): Start of the time bin
             tstop (float): End of the time bin
             reference_frame (SpacecraftFrame): The frame of the reference craft/instrument
             skygrid (Skygrid): The skygrid we are searching over, from the scanner
-            shape_data (dict): TODO Currently stores the shape data for templates, energy bins, and sky positions. There
-                should be a better way to integrate these parameters
 
         Returns:
-            (dict): A dictionary with keys and values for the counts, background rates, background variance, and response
-                extracted from this instrument's data classes
+            (tuple[ndarray]): A tuple with counts, background counts, background variance, and background goodness-of-fit
         """
-        n_templates = shape_data['n_templates']
-        num_sky_positions = shape_data['num_sky_positions']
-        n_energybins = shape_data['n_energybins']
-
-        n_detectors = len(instrument_config.detectors)
-        skygrid_counts = np.zeros(n_templates, num_sky_positions, n_energybins, n_detectors)
-        skygrid_background = np.zeros(n_templates, num_sky_positions, n_energybins, n_detectors)
-        skygrid_background_variance = np.zeros(n_templates, num_sky_positions, n_energybins, n_detectors)
-        response = np.zeros(n_templates, num_sky_positions, n_energybins, n_detectors)
+        counts, background_counts, background_var, good = [], [], [], []
 
         # Iterate over all target sky positions
         for i, skypos in enumerate(skygrid._points.T):
+
+            # get data at the time offset for this position
             offset = self.get_timebin_offset(reference_frame, skypos)
-            counts, exposure = self.counts(tstart + offset, tstop + offset)
-            bkgd_rates, bkgd_variance = self.background_rates(tstart + offset, tstop + offset, exposure)
-            # This should return a matrix for each template, energy bin, and detector given a specific skypos
-            skypos_response = self.load_skypos_response(tstart, tstop, skypos, reference_frame)
-            # TODO reproject outputs to match reference
+            data_at_offset = self.format_data(tstart + offset, tstop + offset)
 
-            # TODO Assign all values to the skygrid matrix representation
+            # store for output
+            counts.append(data_at_offset[0])
+            background_counts.append(data_at_offset[1])
+            background_var.append(data_at_offset[2])
+            good.append(data_at_offset[3])
 
-        return {
-            'counts': skygrid_counts,
-            'background_rates': skygrid_background,
-            'background_variance': skygrid_background_variance,
-            'response': response
-        }
+        return np.array(counts), np.array(background_counts), np.array(background_var), np.array(good)
