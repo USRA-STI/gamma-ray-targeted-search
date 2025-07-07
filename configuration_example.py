@@ -30,10 +30,11 @@ import time as unix_time
 from rich.progress import track
 
 from configuration import InstrumentConfiguration, SearchConfiguration
-from response import GBMResponseGenerator
+from response import GBMResponse
 from search import TargetedSearch
 from results import Results
 from utils import SkyGrid
+from data import FitStatus
 
 import gts
 import utils
@@ -94,12 +95,15 @@ backfitters = DataCollection.from_list(
 backfitters.fit(order=1)
 print("\nBackground Fit took %.1f sec" % (unix_time.time() - clock0))
 
-#bkgd_range = [-30, 30]
+#bkgd_range = [-500, 500]
 #backfitters = DataCollection.from_list(
 #    [BackgroundFitter.from_tte(tte.slice_time(bkgd_range), NaivePoisson) for tte in ttes],
 #    names=gbm_config['detector_names'])
 #backfitters.fit(window_width=125., fast=True)
 
+goodness_of_fit = DataCollection.from_list(
+    [FitStatus(len(edges) - 1) for det, edges in gbm_config["channel_edges"].items()],
+    names=gbm_config['detector_names'])
 
 poshist = GbmPosHist.open("data/gbm/524666469.429/glg_poshist_all_170817_v01.fit")
 
@@ -112,15 +116,14 @@ poshist = GbmPosHist.open("data/gbm/524666469.429/glg_poshist_all_170817_v01.fit
 
 spacecraft_frames = poshist.get_spacecraft_frame()
 
-response = GBMResponseGenerator(phaiis.items, skygrid, spacecraft_frames, t0, 'templates/GBM')
-
-def goodness_of_fit(counts, background_rates):
-    return np.ones_like(counts[-1], dtype=bool)
-
-backup_fitters = []
+response = GBMResponse(phaiis.items, skygrid, spacecraft_frames, t0, 'templates/GBM')
 
 search = TargetedSearch(search_config, skygrid)
-search.add_instrument('gbm', phaiis, backfitters, response, spacecraft_frames, goodness_of_fit, backup_fitters)
+search.add_instrument('gbm', phaiis, backfitters, response, spacecraft_frames, goodness_of_fit)
+
+counts, bkgd_counts, bkgd_var, good = search.instrument_data['gbm'].format_data(1.728, 2.240)
+
+exit(0)
 
 result_inputs = search.run(t0)
 results = Results.create(len(result_inputs), template_names=["soft", "norm", "hard"])
