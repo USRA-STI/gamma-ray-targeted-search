@@ -176,12 +176,12 @@ class InstrumentConfiguration(BaseConfiguration):
 
     @property
     def search_channels(self):
-        """(dict): Dictionary with search_channels keyed accord to detector names"""
+        """(dict): Dictionary with search_channels keyed according to detector names"""
         return {det: det_config['search_channels'] for det, det_config in self['detectors'].items()}
 
     @property
     def channel_edges(self):
-        """(dict): Dictionary with channel_edges keyed accord to detector names"""
+        """(dict): Dictionary with channel_edges keyed according to detector names"""
         return {det: det_config['channel_edges'] for det, det_config in self['detectors'].items()}
 
     def validate(self):
