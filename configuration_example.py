@@ -83,7 +83,7 @@ ttes = DataCollection.from_list(tte_data, names=gbm_config['detector_names'])
 
 phaii_resolution = search_config['min_dur']
 clock0 = unix_time.time()
-phaii_list = ttes.to_phaii(bin_by_time, phaii_resolution, time_ref=0, time_range=time_range)
+phaii_list = ttes.to_phaii(bin_by_time, phaii_resolution, time_ref=0, time_range=(time_range[0] - 0.5 * search_config["max_dur"], time_range[1] + 0.5 * search_config["max_dur"]))
 phaiis = DataCollection.from_list(phaii_list, names=gbm_config['detector_names'])
 print("\nPhaii binning took %.1f sec" % (unix_time.time() - clock0))
 
@@ -123,9 +123,9 @@ search.add_instrument('gbm', phaiis, backfitters, response, spacecraft_frames, g
 
 counts, bkgd_counts, bkgd_var, good = search.instrument_data['gbm'].format_data(1.728, 2.240)
 
+result_inputs = search.run(t0)
 exit(0)
 
-result_inputs = search.run(t0)
 results = Results.create(len(result_inputs), template_names=["soft", "norm", "hard"])
 for i, result in enumerate(result_inputs):
     results.data[i] = result

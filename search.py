@@ -26,7 +26,7 @@
 #
 import numpy as np
 
-from gdt.core.phaii import Phaii
+from gdt.core.data_primitives import TimeEnergyBins
 from gdt.missions.fermi.time import Time
 from astropy.coordinates import get_sun, SkyCoord
 
@@ -84,48 +84,6 @@ class TargetedSearch():
         """
         self.instrument_data[name] = InstrumentData(data, fitters, response_generator, frames, fit_checker)
 
-    def get_bin_starts(self, search_range, durations):
-        """Extract the value of the search bins' start and end based on the reference instrument's data type
-
-        Args:
-            search_range (tuple): 2-tuple that includes the range start and end from which bin starts are anchored
-            durations (ndarray): Array of float values representing the different durations for the targeted search
-
-        Returns:
-            (tuple[float]): Tuple with the start and end bins
-        """
-        reference_instrument = self.search_configuration['reference_instrument']
-        reference_data = self.instrument_data[reference_instrument].data
-
-        tstart = None
-        tend = None
-
-        # TODO Align using tstart from data (for search range, not bin alignment) for both TTE and Phaii data
-        # NOTE: Above concern may already be addressed
-
-        # TODO: Should these print statements be warnings or exceptions?
-        for data in reference_data:
-            if (isinstance(data, Phaii)):
-                tstart1 = data.data.slice_time(search_range[0] - durations.max() / 2.0, 0).tstart[0]
-                tend1 = data.data.slice_time(0, search_range[1]).tstart[-1]
-                if tstart and tstart1 != tstart:
-                    print('Warning, PHAII time bins across reference instrument detectors do not match')
-                else:
-                    tstart = tstart1
-                if tend and tend1 != tend:
-                    print('Warning, PHAII time bins across reference instrument detectors do not match')
-                else:
-                    tend = tend1
-            else:
-                print('Ignoring unbinned detector data for time bin generation')
-
-        if not tstart:
-            tstart = search_range[0]
-        if not tend:
-            tend = search_range[1]
-
-        return tstart, tend
-
     def get_timebins(self, t0=None):
         """Calculate the time bins used in the search. These represent the different emission durations of the search
         shifted across the full search range using a given step size.
@@ -149,13 +107,17 @@ class TargetedSearch():
         log2mindur = np.round(np.log2(min_dur))
         durations = 1.024 * 2. ** np.arange(log2mindur, log2maxdur + 1, 1)
 
-        tstart, tend = self.get_bin_starts(search_range, durations)
+        # Limits of the data interval using the reference instrument
+        reference_instrument = self.search_configuration['reference_instrument']
+        reference_data = self.instrument_data[reference_instrument].data
+        data_start = max([data.slice_time((search_range[0] - 0.5 * max_dur, 0)).time_range[0] for data in reference_data])
+        data_end = min([data.slice_time((0, search_range[1])).time_range[1] for data in reference_data])
 
         # The search bins before t0
-        timebins1 = [(t, dur) for dur in durations for t in np.arange(0, tstart, -max(min_step, dur / num_steps)) if t >= search_range[0] - dur / 2.0]
+        timebins1 = [(t, dur) for dur in durations for t in np.arange(0, data_start, -max(min_step, dur / num_steps)) if t >= search_range[0] - dur / 2.0]
 
         # The search bins after t0, inclusive
-        timebins2 = [(t, dur) for dur in durations for t in np.arange(0, tend, max(min_step, dur / num_steps)) if t + dur / 2.0 <= search_range[-1]]
+        timebins2 = [(t, dur) for dur in durations for t in np.arange(0, data_end, max(min_step, dur / num_steps)) if t + dur / 2.0 <= search_range[-1]]
 
         # Combine the search windows. Format: (tstart, duration)
         timebins = sorted(timebins1)
@@ -185,14 +147,13 @@ class TargetedSearch():
             vals = list(instrument_outputs.values())[0]
             return vals
 
-    def calculate_timebin_likelihood(self, tstart, tstop, t0):
+    def calculate_likelihood(self, tstart, tstop):
         """Generate the necessary result data for a specific timebin by iterating over the scanner's instruments,
         extracting necessary values, and computing the Likelihood
 
         Args:
             tstart (float): Float representing the start of the timebin
             tstop (float): Float representing the end of the timebin
-            t0 (float): Unused, time representing the central time for the search
 
         Returns:
             (tuple): Contains necessary parameters to generate a Result object for this timebin
@@ -263,7 +224,7 @@ class TargetedSearch():
         timebins = self.get_timebins(t0)
         results = []
         for (tstart, dur) in timebins:
-            result = self.calculate_timebin_likelihood(tstart, tstart + dur, t0)
+            result = self.calculate_likelihood(tstart, tstart + dur)
             results.append(result)
 
         return results
@@ -282,18 +243,16 @@ class TargetedSearch():
         reference_instrument = self.search_configuration['reference_instrument']
         reference_data = self.instrument_data[reference_instrument].data
 
-        for i, (bin, dur) in enumerate(timebins):
-            new_bin = None
+        for i, (start, dur) in enumerate(timebins):
+            new_start = None
             for data in reference_data:
-                # TODO Convert print statements to warnings or exceptions as necessary
-                if (isinstance(data, Phaii)):
-                    data_bin = data.data.closest_time_edge(bin)
-                    if new_bin and new_bin != data_bin:
-                        print('Warning, PHAII time bins across reference instrument detectors do not match')
+                if isinstance(data.data, TimeEnergyBins):
+                    closest = data.data.closest_time_edge(start)
+                    if new_start and new_start != closest:
+                        raise ValueError('Warning, PHAII time bins across reference instrument detectors do not match')
                     else:
-                        new_bin = data_bin
-                else:
-                    print('Ignoring unbinned detector data for time bin alignment')
-            timebins[i] = (new_bin, dur)
+                        new_start = closest
+            if new_start:
+                timebins[i] = (new_bin, dur)
 
         return timebins
