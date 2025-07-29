@@ -39,6 +39,7 @@ import time
 import utils
 import plots
 
+from configuration import InstrumentConfiguration, SearchConfiguration
 from skymap import O3_DGAUSS_Model, LigoHealPix
 
 from gdt.core.plot.sky import EquatorialPlot
@@ -52,7 +53,7 @@ from gdt.missions.fermi.gbm.finders import ContinuousFinder, TriggerFinder
 
 basedir = os.path.dirname(os.path.abspath(__file__))
 
-def getData(trigger_id, settings, data_directory):
+def GetData(trigger_id, settings, data_directory):
     """ Method for downloading data needed by the targeted search
 
     Args:
@@ -65,7 +66,6 @@ def getData(trigger_id, settings, data_directory):
         (Time, [str, str, ...], str): tuple with Time() formatted trigger time, 
                                       list of TTE file paths, and position history path
     """
-    detectors = list(settings['detectors'].keys())
 
     # boolean for specifying requested data type (triggered or continuous)
     triggered = isinstance(trigger_id, str)
@@ -78,7 +78,7 @@ def getData(trigger_id, settings, data_directory):
     
     # check for files
     tte_files = []
-    for det in detectors:
+    for det in settings.detectors:
         tte_files.extend(glob.glob(tte_wildcard.replace("??", det)))
     poshist_files = sorted(glob.glob(poshist_wildcard))
 
@@ -148,17 +148,18 @@ def main():
             value = float(args.time)
         trigger = Time(value, format=args.format)
 
-    settings = {
-        'win_width': args.search_window_width,
-        'min_loglr': 5,
-        'min_dur': args.min_dur, 'max_dur': args.max_dur,
-        'min_step': args.min_step,'num_steps': args.num_steps,
-        'detectors':
-             {det.name: {'channel_edges': [0, 8, 20, 33, 51, 85, 106, 127, 128], 'search_channels': [1, 2, 3, 4, 5, 6]} for det in GbmDetectors.nai()} |
-             {det.name: {'channel_edges': [0, 8, 21, 40, 65, 90, 112, 124, 128], 'search_channels': [0, 1, 2, 3, 4, 5, 6, 7]} for det in GbmDetectors.bgo()},
-    }
+    nai_configs = {det.name: {'channel_edges': [0, 8, 20, 33, 51, 85, 106, 127, 128], 'search_channels': [1, 2, 3, 4, 5, 6]} for det in GbmDetectors.nai()}
+    bgo_configs = {det.name: {'channel_edges': [0, 8, 21, 40, 65, 90, 112, 124, 128], 'search_channels': [0, 1, 2, 3, 4, 5, 6, 7]} for det in GbmDetectors.bgo()}
+    gbm_config = InstrumentConfiguration('gbm', nai_configs | bgo_configs)
 
-    trigtime, tte_files, poshist_file = getData(trigger, settings, "data/gbm")
+    search_config = SearchConfiguration(instrument_configs=[gbm_config])
+    search_config.search_settings.update({
+         'win_width': args.search_window_width,
+         'min_loglr': 5,
+         'min_dur': args.min_dur, 'max_dur': args.max_dur,
+         'min_step': args.min_step,'num_steps': args.num_steps})
+
+    trigtime, tte_files, poshist_file = GetData(trigger, gbm_config, "data/gbm")
 
     # Load the tte data into memory
     print("opening TTE")
@@ -196,7 +197,7 @@ def main():
     response = gts.loadResponse(direct_path, **kwargs)
 
     atmoscat = 0
-    az, zen = utils.getGeoCoordinates(spacecraft_frames.at(trigtime), unit='deg')[:2]
+    az, zen = utils.get_geo_coordinates(spacecraft_frames.at(trigtime), unit='deg')[:2]
     if 125.0 < zen and zen < 135.0:
         # add atmospheric scattering component
         atmoscat = 1
