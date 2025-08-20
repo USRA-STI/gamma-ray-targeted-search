@@ -50,7 +50,7 @@ class BaseResponse(ABC):
         self.spacecraft_frames = spacecraft_frames
 
     @abstractmethod
-    def load_response(self, tstart, tstop):
+    def load_response(self, tstart, tstop, **kwargs):
         pass
 
 
@@ -66,14 +66,12 @@ class GBMResponse(BaseResponse):
 
     Public Methods:
         load_response: Method to compute the response matrix for a given time bin
-        load_direct_template: Method to compute the direct response matrix for a given time bin
-        load_atmo_template: Method to compute the atmospheric response matrix for a given detector and azimuth
+        load_direct_response: Method to load the direct response matrix for a given time bin
+        load_atmospheric_response: Method to load the atmospheric response matrix for a given detector and azimuth
         get_available_azimuths: Method to check which azimuths are available in the templates for a given detector
-        get_atmospheric_response: Method to compute the atmospheric response matrix for a given detector at a given
-            azimuth and zenith position
     """
-    zen_margin = 5.0
-    rocking_zen = 130.0
+    zen_margin = np.radians(5.0)
+    rocking_zen = np.radians(130.0)
     det_index = {'n0': 0, 'n1': 1, 'n2': 2, 'n3':3, 'n4': 4, 'n5': 5, 'n6': 6, 'n7': 7, 'n8': 8, 'n9': 9, 'na': 10, 'nb': 11, 'b0': 0, 'b1': 1}
 
     def __init__(self, detectors, skygrid, spacecraft_frames, t0, templates_directory):
@@ -90,13 +88,15 @@ class GBMResponse(BaseResponse):
         super().__init__(detectors, skygrid, spacecraft_frames)
         self.t0 = t0
         self.templates_directory = templates_directory
+        self.available_azimuths = self.get_available_azimuths('n0')
 
-    def load_response(self, tstart, tstop):
+    def load_response(self, tstart, tstop, remove_earth=False):
         """Generates the response matrix for a given time bin
 
         Args:
             tstart (float): Start of the time bin
             tstop (float): End of the time bin
+            remove_earth (bool): remove earth region from response matrix
 
         Returns:
             (tuple[ndarray]): tuple with matrices for instrument response and the Earth mask representing
@@ -110,20 +110,18 @@ class GBMResponse(BaseResponse):
         responses = []
 
         for detector in self.detectors:
-            direct = self.load_direct_template(detector)
-            atmo = self.get_atmospheric_response(detector, geo_azimuth, geo_zenith)
+            direct = self.load_direct_response(detector)
+            atmo = self.load_atmospheric_response(detector, geo_azimuth, geo_zenith)
             responses.append(direct + atmo)
 
         response = np.stack(responses, axis=2)
 
-        earthmask = create_earth_mask(self.skygrid._points, geo_azimuth, geo_zenith, geo_radius)
+        if remove_earth:
+            earthmask = create_earth_mask(self.skygrid._points, geo_azimuth, geo_zenith, geo_radius)
+            return response[:, :, :, earthmask]
+        return response
 
-        # TODO Hack. This needs to be changed
-        response = response[0:3, :, :, :]
-
-        return response, earthmask
-
-    def load_direct_template(self, detector):
+    def load_direct_response(self, detector):
         """Loads the direct response matrix for a specific detector
 
         Args:
@@ -132,11 +130,10 @@ class GBMResponse(BaseResponse):
         Returns:
             (ndarray): The direct response matrix/array for one detector
         """
-        template_file = os.path.join(self.templates_directory, 'direct', f"{getGbmDetectorType(detector)}.npy")
-        data = self.swap_cols(np.load(template_file))
-        return data[:, :, self.det_index[detector]]
+        path = os.path.join(self.templates_directory, 'direct', f"{self.get_detector_type(detector)}.npy")
+        return np.load(path)[:, :, :, self.det_index[detector]]
 
-    def get_atmospheric_response(self, detector, geo_az, geo_zen):
+    def load_atmospheric_response(self, detector, geo_az, geo_zen):
         """Loads the atmospheric response matrix for a specific detector
 
         Args:
@@ -147,21 +144,22 @@ class GBMResponse(BaseResponse):
         Returns:
             (ndarray): The atmospheric response matrix/array for one detector
         """
+        print("geo_az", geo_az)
+        print("geo_zen", geo_zen)
         if np.abs(geo_zen - self.rocking_zen) > self.zen_margin:
-            template_file = os.path.join(self.templates_directory, 'atmo_' + getGbmDetectorType(detector), 'atmrates_az0_zen130.npy')
-            original_data = self.swap_cols(np.load(template_file))
-            zero_shape = original_data[:, :, self.det_index[detector]].shape
-            return np.zeros(zero_shape)
+            return 0.0
 
-        azimuths = self.get_available_azimuths(detector)
-        azimuths = np.array([355.0, 360.0]) if geo_az > 355 else azimuths
+        # calculate nearest available azimuths
+        idx = np.argsort(np.abs(geo_az - self.available_azimuths))[:2]
+        nearest_az = self.available_azimuths[idx]
 
-        idx = np.argsort(np.abs(geo_az - azimuths))[:2]
-        nearest_az = azimuths[idx]
-        nearest_az[nearest_az == 360.0] = 0.0
+        # load responses
+        responses = []
+        for az in nearest_az:
+            path = os.path.join(self.templates_directory, 'atmo_' + self.get_detector_type(detector), f'atmrates_az{int(np.degrees(az))}_zen130.npy')
+            responses.append(np.load(path)[:, :, :, self.det_index[detector]])
 
-        # need to check why we're swapping columns and not swapping back
-        responses = self.swap_cols([self.load_atmo_template(detector, a) for a in nearest_az])
+        # calculate weighted response
         width = np.abs(nearest_az[0] - nearest_az[1])
         dtheta = np.abs(geo_az - nearest_az)
         weights = 1.0 - (dtheta / width)
@@ -178,42 +176,17 @@ class GBMResponse(BaseResponse):
         Returns:
             (ndarray): An array with the available azimuths for the detector
         """
-        path = os.path.join(self.templates_directory, 'atmo_' + getGbmDetectorType(detector))
-        files = os.listdir(path)
-        azimuths = [float(f.split('_')[1][2:]) for f in files if f.startswith('atmrates_az')]
+        paths = os.listdir(os.path.join(self.templates_directory, 'atmo_' + self.get_detector_type(detector)))
+        azimuths = [np.radians(float(path.split('_')[1][2:]))
+                    for path in paths if path.startswith('atmrates_az')]
+
+        # account for angular rollover
+        if 0.0 in azimuths:
+            azimuths.append(2 * np.pi)
+
         return np.array(sorted(azimuths))
 
-    def load_atmo_template(self, detector, azimuth):
-        """Loads the atmospheric response matrix for a specific detector at a given azimuth
-
-        Args:
-            detector (str): The name of the detector
-            azimuth (float): Azimuth
-
-        Returns:
-            (ndarray): The atmospheric response matrix/array for one detector at a given azimuth
-        """
-        file_path = os.path.join(self.templates_directory, 'atmo_' + getGbmDetectorType(detector), f'atmrates_az{int(azimuth)}_zen130.npy')
-        data = self.swap_cols(np.load(file_path))
-        return data[:, :, self.det_index[detector]]
-
-    def swap_cols(rsp):
-        """Swaps old response matrix format for the new column ordering
-
-        Args:
-            rsp (ndarray): Response matrix
-
-        Returns:
-           (ndarray): Response matrix with swapped columns for detectors and energy bins
-        """
-        ntemplate, nsky, nene, ndet = rsp.shape
-        swapped = np.zeros((ntemplate, nsky, ndet, nene), dtype=rsp.dtype)
-        for det in range(ndet):
-            for ene in range(nene):
-                swapped[:,:,det,ene] = rsp[:,:,ene,det]
-        return swapped
-
-    def getGbmDetectorType(detector):
+    def get_detector_type(self, detector):
         """Gets the type of a specified detector according to GBM standards
 
         Args:
@@ -222,11 +195,7 @@ class GBMResponse(BaseResponse):
         Returns:
             (str): Detector type
         """
-        if GbmDetectors.from_str(detector).is_nai():
-            det_type = 'nai'
-        elif GbmDetectors.from_str(detector).is_bgo():
-            det_type = 'bgo'
-        else:
-            raise ValueError(f'Detector {detector} not recognized.')
-
-        return det_type
+        gbm_det = GbmDetectors.from_str(detector)
+        if gbm_det.is_nai():
+            return 'nai'
+        return 'bgo'
