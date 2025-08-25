@@ -31,6 +31,7 @@ from abc import ABC, abstractmethod
 from gdt.missions.fermi.time import Time
 from gdt.missions.fermi.gbm.detectors import GbmDetectors
 from utils import get_geo_coordinates, create_earth_mask
+from astropy.coordinates import angular_separation
 
 
 class BaseResponse(ABC):
@@ -74,7 +75,7 @@ class GBMResponse(BaseResponse):
     rocking_zen = np.radians(130.0)
     det_index = {'n0': 0, 'n1': 1, 'n2': 2, 'n3':3, 'n4': 4, 'n5': 5, 'n6': 6, 'n7': 7, 'n8': 8, 'n9': 9, 'na': 10, 'nb': 11, 'b0': 0, 'b1': 1}
 
-    def __init__(self, detectors, skygrid, spacecraft_frames, t0, templates_directory):
+    def __init__(self, detectors, skygrid, spacecraft_frames, t0, templates_directory, delta: float = np.radians(0.1)):
         """ Class constructor
 
         Args:
@@ -87,8 +88,16 @@ class GBMResponse(BaseResponse):
         """
         super().__init__(detectors, skygrid, spacecraft_frames)
         self.t0 = t0
+        self.delta = delta
         self.templates_directory = templates_directory
         self.available_azimuths = self.get_available_azimuths('n0')
+
+        self.direct = {}
+        for detector in self.detectors:
+            self.direct[detector] = self.load_direct_response(detector)
+
+        self.cached = None
+        self.cached_geo = None
 
     def load_response(self, tstart, tstop, remove_earth=False):
         """Generates the response matrix for a given time bin
@@ -107,14 +116,23 @@ class GBMResponse(BaseResponse):
         spacecraft_frame = self.spacecraft_frames.at(tcenter)
         geo_azimuth, geo_zenith, geo_radius = get_geo_coordinates(spacecraft_frame)
 
-        responses = []
+        if self.cached is None or angular_separation(geo_azimuth, 0.5 * np.pi - geo_zenith, *self.cached_geo) >= self.delta:
+            # build reponse matrix from direct + atmospheric scattering components
+            # when the cached matrix is None or the spacecraft has moved more than delta
+            responses = []
 
-        for detector in self.detectors:
-            direct = self.load_direct_response(detector)
-            atmo = self.load_atmospheric_response(detector, geo_azimuth, geo_zenith)
-            responses.append(direct + atmo)
+            for detector in self.detectors:
+                direct = self.direct[detector]
+                atmo = self.load_atmospheric_response(detector, geo_azimuth, geo_zenith)
+                responses.append(direct + atmo)
 
-        response = np.stack(responses, axis=2)
+            response = np.stack(responses, axis=2)
+
+            self.cached = response
+            self.cached_geo = (geo_azimuth, 0.5 * np.pi - geo_zenith)
+        else:
+            # otherwise retrieve the cached response matrix
+            response = self.cached
 
         if remove_earth:
             earthmask = create_earth_mask(self.skygrid._points, geo_azimuth, geo_zenith, geo_radius)
@@ -144,8 +162,6 @@ class GBMResponse(BaseResponse):
         Returns:
             (ndarray): The atmospheric response matrix/array for one detector
         """
-        print("geo_az", geo_az)
-        print("geo_zen", geo_zen)
         if np.abs(geo_zen - self.rocking_zen) > self.zen_margin:
             return 0.0
 
