@@ -82,7 +82,7 @@ class TestInstrumentConfiguration(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
        cls.ref_kwargs = {
-           "instrument_name": "test",
+           "name": "test",
            "detectors": {
                "t0": {"channel_edges": [0, 1, 2], "search_channels": [0, 1]},
                "t1": {"channel_edges": [3, 4, 5], "search_channels": [1]},
@@ -128,13 +128,13 @@ class TestInstrumentConfiguration(unittest.TestCase):
        good_settings = copy.deepcopy(config.settings)
 
        # test for incorrect type
-       config.settings["instrument_name"] = 0
+       config.settings["name"] = 0
        with self.assertRaises(ValueError):
            config.validate()
        config.settings = copy.deepcopy(good_settings)
 
        # test for missing settings key
-       config.settings.pop("instrument_name")
+       config.settings.pop("name")
        with self.assertRaises(ValueError):
            config.validate()
        config.settings = copy.deepcopy(good_settings)
@@ -161,7 +161,7 @@ class TestSearchConfiguration(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
        ref_instrument = configuration.InstrumentConfiguration(
-           instrument_name= "test", detectors={
+           name= "test", detectors={
                "t0": {"channel_edges": [0, 1, 2], "search_channels": [0, 1]},
                "t1": {"channel_edges": [3, 4, 5], "search_channels": [1]},
            })
@@ -178,7 +178,7 @@ class TestSearchConfiguration(unittest.TestCase):
 
        # add a new instrument
        new = copy.deepcopy(config.settings["instruments"][0])
-       new.settings["instrument_name"] = "new"
+       new.settings["name"] = "new"
        config.add_instrument(new)
        self.assertEqual(config["instrument_names"], ["test", "new"])
 

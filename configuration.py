@@ -136,16 +136,16 @@ class InstrumentConfiguration(BaseConfiguration):
 
     _derived_keys = ['detector_names', 'channel_edges', 'channel_mask', 'search_channels']
 
-    def __init__(self, instrument_name=None, detectors=None):
+    def __init__(self, name=None, detectors=None):
         """Class constructor
 
         Args:
-            instrument_name (str): Instrument name
+            name (str): Instrument name
             detectors (dict): Dictionary representing the configuration for each detector. Keys are detector names
                 and values are detector configurations. Each detector should have set at minimum the channel edges and
                 the search channels to be used
         """
-        super().__init__(instrument_name=instrument_name, detectors=detectors)
+        super().__init__(name=name, detectors=detectors)
 
     def add_detector(self, detector_name, detector_config):
         """Add a new detector configuration
@@ -188,11 +188,11 @@ class InstrumentConfiguration(BaseConfiguration):
         """Ensure configuration meets expected structure"""
         super().validate()
 
-        for key in ['instrument_name', 'detectors']:
+        for key in ['name', 'detectors']:
             if key not in self.keys():
                 raise ValueError(f"Configuration missing '{key}'")
 
-        if not isinstance(self['instrument_name'], str):
+        if not isinstance(self['name'], str):
             raise ValueError(f"Instrument name is not a string. Please check your inputs.")
 
         for detector, detector_config in self['detectors'].items():
@@ -254,7 +254,7 @@ class SearchConfiguration(BaseConfiguration):
         Args:
             instrument_config (InstrumentConfiguration): An instrument configuration
         """
-        name = instrument_config['instrument_name']
+        name = instrument_config['name']
         if name in self.instrument_names:
             warnings.warn(f"Replacing instrument {name}")
             i = self.instrument_names.index(name)
@@ -263,31 +263,31 @@ class SearchConfiguration(BaseConfiguration):
             self['instruments'].append(instrument_config)
         self.validate()
 
-    def get_instrument(self, instrument_name):
+    def get_instrument(self, name):
         """Extracts a specified instrument's corresponding InstrumentConfiguration
 
         Args:
-            instrument_name (str): The name of the instrument
+            name (str): The name of the instrument
 
         Returns:
             (InstrumentConfiguration): The instance of InstrumentConfugration that corresponds to the input instrument
         """
         try:
-            i = self.instrument_names.index(instrument_name)
+            i = self.instrument_names.index(name)
             return self['instruments'][i]
         except ValueError:
-            print(f"{instrument_name} does not exist in instruments list")
+            print(f"{name} does not exist in instruments list")
             exit(0)
 
     @property
     def instrument_names(self):
         """(list): List of instrument names"""
-        return [instrument['instrument_name'] for instrument in self['instruments']]
+        return [instrument['name'] for instrument in self['instruments']]
 
     @property
     def reference_instrument(self):
         """(str): Name of the reference instrument (always the first item in the instruments list)"""
-        return self['instruments'][0]['instrument_name']
+        return self['instruments'][0]['name']
 
     @property
     def time_range(self):
