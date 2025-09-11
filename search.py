@@ -50,8 +50,6 @@ class TargetedSearch():
     Public Methods:
         add_instrument:
             Create and add a new InstrumentData instance to scanner's instrument_data attribute
-        get_bin_starts:
-            Return the start and end times for the timebins needed to perform the scan
         get_timebins:
             Return a list with values for the start times and durations of each search bin
         stack_instrument_outputs:
@@ -158,37 +156,42 @@ class TargetedSearch():
         Returns:
             (tuple): Contains necessary parameters to generate a Result object for this timebin
         """
+        # always start with the first instrument in the list
+        instrument = self.search_configuration['instruments'][0]
+        instrument_data = self.instrument_data[instrument['name']]
+        reference_frame = data.get_spacecraft_frame((tstart + tstop) / 2)
 
-        # TODO Where to store n_templates? energybins? Are these to be hardcoded, or added as parameters?
-        shape_data = {
-            "n_templates": 3,
-            "n_energybins": 8,
-            "num_sky_positions": self.skygrid.size
-        }
+        # gather counts, background, response, and response mask for first instrument
+        response, response_mask = instrument_data.response.load_response(tstart, tstop, earth_mask=True)
+        counts, background_counts, background_var, good = instrument_data.format_data(tstart, tstop))
+        mask = response_mask[np.newaxis, :, np.newaxis] & good & instrument.channel_mask()
 
-        duration = tstop - tstart
+        # append remaining instruments
+        for i in range(1, len(self.search_configuration['instruments'])):
 
-        reference_instrument = self.search_configuration['reference_instrument']
-        reference_frame = self.instrument_data[reference_instrument].get_spacecraft_frame((tstart + tstop) / 2)
-        outputs = {}
+                if i == 1:
+                    # update instrument shape to match shape needed for np.hstack
+                    counts = np.full(response.shape, counts)
+                    background_counts = np.full(response.shape, background_counts)
 
-        for instrument in self.instrument_data.keys():
-            instrument_data = self.instrument_data[instrument]
-            instrument_config = self.search_configuration.get_instrument(instrument)
-            if instrument == reference_instrument:
-                outputs[instrument] = instrument_data.format_data(instrument_config, tstart, tstop,
-                                                                  self.skygrid, shape_data)
-            else:
-                outputs[instrument] = instrument_data.format_data_by_reference(instrument_config, tstart, tstop,
-                                                                               reference_frame, self.skygrid, shape_data)
+                instrument = self.search_configuration['instruments'][i]
+                instrument_data = self.instrument_data[instrument['name']]
 
-        counts, bkgd_counts, bkgd_variance, response = self.stack_instrument_outputs(outputs)
+                counts_i, background_counts_i, background_var_i, good_i = instrument_data.format_data_by_reference(tstart, tstop, reference_frame, skygrid)) # define skygrid
+                response_i, response_mask_i = instrument_data.response.load_response(tstart, tstop, earth_mask=True)
+
+                mask_i = response_mask_i[np.newaxis, :, np.newaxis] & good_i & instrument.channel_mask()
+
+                counts = np.hstack([counts, counts_i])
+                background_counts = np.hstack([background_counts, background_counts_i])
+                background_var = np.hstack([background_var, background_var_i])
+                response = np.hstack([response, response_i])
+                mask = np.hstack([mask, mask_i])
+
 
         like = Likelihood(shape_data['n_templates'], self.skygrid.size)
         like.calculate(counts, bkgd_counts, bkgd_variance, response)
 
-        # TODO Remove all following definitions from search
-        tcenter = tstart + duration / 2.0
 
         # TODO Move to Likelihood class?
         coords_max = utils.find_location_of_max_likelihood(self.skygrid, like, reference_frame)
