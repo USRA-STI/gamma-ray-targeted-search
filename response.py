@@ -99,13 +99,13 @@ class GBMResponse(BaseResponse):
         self.cached = None
         self.cached_geo = None
 
-    def load_response(self, tstart, tstop, remove_earth=False):
+    def load_response(self, tstart, tstop, earth_mask=False):
         """Generates the response matrix for a given time bin
 
         Args:
             tstart (float): Start of the time bin
             tstop (float): End of the time bin
-            remove_earth (bool): remove earth region from response matrix
+            earth_mask (bool): return earth mask with response matrix
 
         Returns:
             (tuple[ndarray]): tuple with matrices for instrument response and the Earth mask representing
@@ -134,9 +134,8 @@ class GBMResponse(BaseResponse):
             # otherwise retrieve the cached response matrix
             response = self.cached
 
-        if remove_earth:
-            earthmask = create_earth_mask(self.skygrid._points, geo_azimuth, geo_zenith, geo_radius)
-            return response[:, :, :, earthmask]
+        if earth_mask:
+            return response, create_earth_mask(self.skygrid._points, geo_azimuth, geo_zenith, geo_radius)
         return response
 
     def load_direct_response(self, detector):
