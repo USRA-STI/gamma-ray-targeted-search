@@ -147,9 +147,6 @@ class InstrumentData:
             instrument_config (InstrumentConfiguration): The configuration for this instrument
             tstart (float): Start of the time bin
             tstop (float): End of the time bin
-            skygrid (Skygrid): The skygrid we are searching over, from the scanner
-            shape_data (dict): TODO Currently stores the shape data for templates, energy bins, and sky positions. There
-                should be a better way to integrate these parameters
 
         Returns:
             (tuple[ndarray]): A tuple with counts, background counts, background variance, and background goodness-of-fit
