@@ -51,7 +51,7 @@ class BaseResponse(ABC):
         self.spacecraft_frames = spacecraft_frames
 
     @abstractmethod
-    def load_response(self, tstart, tstop, **kwargs):
+    def load_response(self, tstart, tstop, mask=False, **kwargs):
         pass
 
 
@@ -99,13 +99,13 @@ class GBMResponse(BaseResponse):
         self.cached = None
         self.cached_geo = None
 
-    def load_response(self, tstart, tstop, earth_mask=False):
+    def load_response(self, tstart, tstop, mask=False):
         """Generates the response matrix for a given time bin
 
         Args:
             tstart (float): Start of the time bin
             tstop (float): End of the time bin
-            earth_mask (bool): return earth mask with response matrix
+            mask (bool): return earth mask with response matrix
 
         Returns:
             (tuple[ndarray]): tuple with matrices for instrument response and the Earth mask representing
@@ -126,7 +126,7 @@ class GBMResponse(BaseResponse):
                 atmo = self.load_atmospheric_response(detector, geo_azimuth, geo_zenith)
                 responses.append(direct + atmo)
 
-            response = np.stack(responses, axis=2)
+            response = np.concatenate(responses, axis=2)
 
             self.cached = response
             self.cached_geo = (geo_azimuth, 0.5 * np.pi - geo_zenith)
@@ -134,7 +134,7 @@ class GBMResponse(BaseResponse):
             # otherwise retrieve the cached response matrix
             response = self.cached
 
-        if earth_mask:
+        if mask:
             return response, create_earth_mask(self.skygrid._points, geo_azimuth, geo_zenith, geo_radius)
         return response
 

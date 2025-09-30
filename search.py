@@ -159,12 +159,12 @@ class TargetedSearch():
         # always start with the first instrument in the list
         instrument = self.search_configuration['instruments'][0]
         instrument_data = self.instrument_data[instrument['name']]
-        reference_frame = data.get_spacecraft_frame((tstart + tstop) / 2)
+        reference_frame = instrument_data.get_spacecraft_frame((tstart + tstop) / 2)
 
         # gather counts, background, response, and response mask for first instrument
-        response, response_mask = instrument_data.response.load_response(tstart, tstop, earth_mask=True)
-        counts, background_counts, background_var, good = instrument_data.format_data(tstart, tstop))
-        mask = response_mask[np.newaxis, :, np.newaxis] & good & instrument.channel_mask()
+        response, sky_mask = instrument_data.response.load_response(tstart, tstop, mask=True)
+        counts, background_counts, background_var, good = instrument_data.format_data(tstart, tstop)
+        response_mask = sky_mask[np.newaxis, :, np.newaxis] & good & instrument.channel_mask
 
         # append remaining instruments
         for i in range(1, len(self.search_configuration['instruments'])):
@@ -177,21 +177,20 @@ class TargetedSearch():
                 instrument = self.search_configuration['instruments'][i]
                 instrument_data = self.instrument_data[instrument['name']]
 
-                counts_i, background_counts_i, background_var_i, good_i = instrument_data.format_data_by_reference(tstart, tstop, reference_frame, skygrid)) # define skygrid
-                response_i, response_mask_i = instrument_data.response.load_response(tstart, tstop, earth_mask=True)
+                counts_i, background_counts_i, background_var_i, good_i = instrument_data.format_data_by_reference(tstart, tstop, reference_frame, skygrid) # define skygrid
+                response_i, sky_mask_i = instrument_data.response.load_response(tstart, tstop, mask=True)
 
-                mask_i = response_mask_i[np.newaxis, :, np.newaxis] & good_i & instrument.channel_mask()
+                response_mask_i = sky_mask_i[np.newaxis, :, np.newaxis] & good_i & instrument.channel_mask
 
                 counts = np.hstack([counts, counts_i])
                 background_counts = np.hstack([background_counts, background_counts_i])
                 background_var = np.hstack([background_var, background_var_i])
                 response = np.hstack([response, response_i])
-                mask = np.hstack([mask, mask_i])
+                sky_mask = sky_mask | sky_mask_i
+                response_mask = np.hstack([response_mask, response_mask_i])
 
-
-        like = Likelihood(shape_data['n_templates'], self.skygrid.size)
-        like.calculate(counts, bkgd_counts, bkgd_variance, response)
-
+        like = Likelihood(response.shape[0], self.skygrid.size)
+        like.calculate(counts, background_counts, background_var, response * response_mask)
 
         # TODO Move to Likelihood class?
         coords_max = utils.find_location_of_max_likelihood(self.skygrid, like, reference_frame)
@@ -206,11 +205,11 @@ class TargetedSearch():
 
         # TODO This function relies on single-instrument context; earthmask for multi-instrument search would need to be
         #      generated or composed.
-        _, earthmask = instrument_data.load_response(tstart, tstop, self.skygrid)
-        log_sky_prior = utils.sky_prior(self.skygrid._points[:,earthmask], reference_frame, None, None)
-        coinclr = like.coinclr(log_sky_prior, llratio=like.llr)
+        log_sky_prior = utils.sky_prior(self.skygrid._points[:, sky_mask], reference_frame, None, None)
+        coinclr = like.coinclr(log_sky_prior, llratio=like.llr[:, sky_mask])
 
-        result = (tcenter, duration, ra_max, dec_max, like.max_template, like.photon_fluence/duration, *like.chisq,
+        duration = tstop - tstart
+        result = (tstart, duration, ra_max, dec_max, like.max_template, like.photon_fluence/duration, *like.chisq,
                   like.marginal_llr, coinclr)
 
         return result
@@ -256,6 +255,6 @@ class TargetedSearch():
                     else:
                         new_start = closest
             if new_start:
-                timebins[i] = (new_bin, dur)
+                timebins[i] = (new_start, dur)
 
         return timebins
