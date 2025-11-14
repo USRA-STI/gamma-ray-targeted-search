@@ -42,11 +42,11 @@ class BaseConfiguration(yaml.YAMLObject):
     Attributes:
         settings (dict): dictionary with the configuration settings
         yaml_tag (str): tag used to serialize the class within YAML files
+        cache (object, optional): cache of values excluded from write.
+                                  Used to reduce overhead when derived
+                                  methods are frequently called.
         _derived_keys (list): list of derived keys to be constructed
                               from base settings.
-        cache (object, optional): cache of values excluded from write.
-                                  Used to reduce overhead of repeatedly
-                                  calling derived methods.
 
     Public Methods:
         keys: List the available keys
@@ -92,7 +92,7 @@ class BaseConfiguration(yaml.YAMLObject):
             path (str): Path to the output file
         """
         if hasattr(self, "cache"):
-            del self.cache
+            del self.cache # exclude runtime cache from write
         with open(path, 'w') as file:
             yaml.dump(self, file, default_flow_style=None, sort_keys=False)
 
@@ -126,6 +126,9 @@ class InstrumentConfiguration(BaseConfiguration):
     Attributes:
         settings (dict): dictionary with the configuration settings
         yaml_tag (str): tag used to serialize the class within YAML files
+        cache (object, optional): cache of values excluded from write.
+                                  Used to reduce overhead when derived
+                                  methods are frequently called.
         _derived_keys (list): list of derived keys to be constructed
                               from base settings.
 
@@ -234,7 +237,7 @@ class SearchConfiguration(BaseConfiguration):
     """
     yaml_tag = "!configuration.SearchConfiguration"
 
-    _derived_keys = ['instrument_names', 'reference_instrument', 'time_range']
+    _derived_keys = ['instrument_names', 'reference_instrument', 'time_range', 'time_resolution']
 
     def __init__(self, win_width=60, min_loglr=5.0, min_dur=0.064, max_dur=8.192,
                  min_step=0.064, num_steps=8, skygrid_resolution=5.0,
@@ -323,3 +326,8 @@ class SearchConfiguration(BaseConfiguration):
         for instrument_config in self['instruments']:
             if not isinstance(instrument_config, InstrumentConfiguration):
                 raise ValueError(f"Instrument configuration must be of type InstrumentConfiguration")
+
+    @property
+    def time_resolution(self):
+        """(str): Name of the reference instrument (always the first item in the instruments list)"""
+        return max(self['min_step'], self['min_dur'] / self['num_steps'])
