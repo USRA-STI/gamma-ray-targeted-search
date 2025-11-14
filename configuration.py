@@ -29,7 +29,6 @@ import yaml
 import numpy as np
 import warnings
 
-
 class BaseConfiguration(yaml.YAMLObject):
     """A base class for configuration objects.
 
@@ -45,6 +44,9 @@ class BaseConfiguration(yaml.YAMLObject):
         yaml_tag (str): tag used to serialize the class within YAML files
         _derived_keys (list): list of derived keys to be constructed
                               from base settings.
+        cache (dict, optional): cache of values excluded from write.
+                                Used to reduce overhead of repeatedly
+                                calling derived methods.
 
     Public Methods:
         keys: List the available keys
@@ -89,6 +91,8 @@ class BaseConfiguration(yaml.YAMLObject):
         Args:
             path (str): Path to the output file
         """
+        if hasattr(self, "cache"):
+            del self.cache
         with open(path, 'w') as file:
             yaml.dump(self, file, default_flow_style=None, sort_keys=False)
 
@@ -112,6 +116,8 @@ class BaseConfiguration(yaml.YAMLObject):
         """Basic validation ensuring we have a settings dictionary"""
         if not isinstance(self.settings, dict):
             raise ValueError(f"Underlying settings must be a dictionary")
+        if hasattr(self, "cache"):
+            del self.cache
 
 
 class InstrumentConfiguration(BaseConfiguration):
@@ -168,11 +174,13 @@ class InstrumentConfiguration(BaseConfiguration):
     @property
     def channel_mask(self):
         """(numpy.ndarray): Construct the mask of allowed detector channels for a search"""
-        mask = []
-        for det_config in self['detectors'].values():
-            mask.append([channel in det_config['search_channels']
-                         for channel in range(len(det_config['channel_edges']) - 1)])
-        return np.ravel(mask)
+        if hasattr(self, "cache") == False:
+            mask = []
+            for det_config in self['detectors'].values():
+                mask.append([channel in det_config['search_channels']
+                             for channel in range(len(det_config['channel_edges']) - 1)])
+            self.cache = {'mask': np.ravel(mask)}
+        return self.cache['mask']
 
     @property
     def search_channels(self):
