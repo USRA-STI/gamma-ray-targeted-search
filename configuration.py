@@ -44,9 +44,9 @@ class BaseConfiguration(yaml.YAMLObject):
         yaml_tag (str): tag used to serialize the class within YAML files
         _derived_keys (list): list of derived keys to be constructed
                               from base settings.
-        cache (dict, optional): cache of values excluded from write.
-                                Used to reduce overhead of repeatedly
-                                calling derived methods.
+        cache (object, optional): cache of values excluded from write.
+                                  Used to reduce overhead of repeatedly
+                                  calling derived methods.
 
     Public Methods:
         keys: List the available keys
@@ -179,8 +179,8 @@ class InstrumentConfiguration(BaseConfiguration):
             for det_config in self['detectors'].values():
                 mask.append([channel in det_config['search_channels']
                              for channel in range(len(det_config['channel_edges']) - 1)])
-            self.cache = {'mask': np.ravel(mask)}
-        return self.cache['mask']
+            self.cache = np.ravel(mask)
+        return self.cache
 
     @property
     def search_channels(self):
