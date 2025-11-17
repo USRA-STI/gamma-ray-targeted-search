@@ -58,10 +58,11 @@ bgo_configs = {det.name: {'channel_edges': bgo_edges.copy(), 'search_channels': 
 
 det_configs = nai_configs | bgo_configs
 gbm_config = InstrumentConfiguration('gbm', det_configs)
+gbm_config.channel_mask
 
-t0 = 524666469.44569993
+t0 = 524666469.4457
 
-search_config = SearchConfiguration(win_width=10, instruments=[gbm_config])
+search_config = SearchConfiguration(win_width=10, min_dur=1.024, max_dur=1.024, instruments=[gbm_config])
 
 time_range = search_config.time_range
 
@@ -81,12 +82,13 @@ for det in track(gbm_config['detector_names'], description="Opening TTE files"):
 
 ttes = DataCollection.from_list(tte_data, names=gbm_config['detector_names'])
 
-phaii_resolution = search_config['min_dur']
+phaii_resolution = search_config['time_resolution']
 clock0 = unix_time.time()
 phaii_list = ttes.to_phaii(bin_by_time, phaii_resolution, time_ref=0, time_range=(time_range[0] - 0.5 * search_config["max_dur"], time_range[1] + 0.5 * search_config["max_dur"]))
 phaiis = DataCollection.from_list(phaii_list, names=gbm_config['detector_names'])
 print("\nPhaii binning took %.1f sec" % (unix_time.time() - clock0))
 
+"""
 bkgd_fit_ranges = [-30, 30]
 clock0 = unix_time.time()
 backfitters = DataCollection.from_list(
@@ -94,12 +96,15 @@ backfitters = DataCollection.from_list(
     names=gbm_config['detector_names'])
 backfitters.fit(order=1)
 print("\nBackground Fit took %.1f sec" % (unix_time.time() - clock0))
+"""
 
-#bkgd_range = [-500, 500]
-#backfitters = DataCollection.from_list(
-#    [BackgroundFitter.from_tte(tte.slice_time(bkgd_range), NaivePoisson) for tte in ttes],
-#    names=gbm_config['detector_names'])
-#backfitters.fit(window_width=125., fast=True)
+bkgd_range = [-500, 500]
+clock0 = unix_time.time()
+backfitters = DataCollection.from_list(
+    [BackgroundFitter.from_tte(tte.slice_time(bkgd_range), NaivePoisson) for tte in ttes],
+    names=gbm_config['detector_names'])
+backfitters.fit(window_width=125., fast=True)
+print("\nBackground Fit took %.1f sec" % (unix_time.time() - clock0))
 
 goodness_of_fit = DataCollection.from_list(
     [FitStatus(len(edges) - 1) for det, edges in gbm_config["channel_edges"].items()],
@@ -121,9 +126,10 @@ response = GBMResponse(phaiis.items, skygrid, spacecraft_frames, t0, 'templates/
 search = TargetedSearch(search_config, skygrid)
 search.add_instrument('gbm', phaiis, backfitters, response, spacecraft_frames, goodness_of_fit)
 
-counts, bkgd_counts, bkgd_var, good = search.instrument_data['gbm'].format_data(1.728, 2.240)
+#counts, bkgd_counts, bkgd_var, good = search.instrument_data['gbm'].format_data(1.728, 2.240)
 
-result_inputs = search.run(t0)
+results = search.run(t0)
+print(results[0])
 exit(0)
 
 results = Results.create(len(result_inputs), template_names=["soft", "norm", "hard"])
