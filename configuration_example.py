@@ -121,7 +121,7 @@ poshist = GbmPosHist.open("data/gbm/524666469.429/glg_poshist_all_170817_v01.fit
 
 spacecraft_frames = poshist.get_spacecraft_frame()
 
-response = GBMResponse(phaiis.items, skygrid, spacecraft_frames, t0, 'templates/GBM')
+response = GBMResponse(phaiis.items, skygrid, spacecraft_frames, t0, 'templates/GBM', templates=[0, 1, 2])
 
 search = TargetedSearch(search_config, skygrid)
 search.add_instrument('gbm', phaiis, backfitters, response, spacecraft_frames, goodness_of_fit)

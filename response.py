@@ -64,6 +64,7 @@ class GBMResponse(BaseResponse):
         spacecraft_frames (SpacecraftFrames): The spacecraft frames for the instrument
         t0 (float): Central search time
         templates_directory (str): String representing the location where response templates are stored
+        delta (float): Angular displacement for rebuilding atmospheric scattering response
 
     Public Methods:
         load_response: Method to compute the response matrix for a given time bin
@@ -75,7 +76,7 @@ class GBMResponse(BaseResponse):
     rocking_zen = np.radians(130.0)
     det_index = {'n0': 0, 'n1': 1, 'n2': 2, 'n3':3, 'n4': 4, 'n5': 5, 'n6': 6, 'n7': 7, 'n8': 8, 'n9': 9, 'na': 10, 'nb': 11, 'b0': 0, 'b1': 1}
 
-    def __init__(self, detectors, skygrid, spacecraft_frames, t0, templates_directory, delta: float = np.radians(0.1)):
+    def __init__(self, detectors, skygrid, spacecraft_frames, t0, templates_directory, delta: float = np.radians(0.1), templates: list = None):
         """ Class constructor
 
         Args:
@@ -85,12 +86,15 @@ class GBMResponse(BaseResponse):
                 generated for
             t0 (float): The central time of the search
             templates_directory (str): String representing the path where the templates for the GBM response are stored
+            delta (float): Angular displacement for rebuilding atmospheric scattering response
+            templates (list): list of template IDs to use
         """
         super().__init__(detectors, skygrid, spacecraft_frames)
         self.t0 = t0
         self.delta = delta
         self.templates_directory = templates_directory
         self.available_azimuths = self.get_available_azimuths('n0')
+        self.templates = templates
 
         self.direct = {}
         for detector in self.detectors:
@@ -127,6 +131,9 @@ class GBMResponse(BaseResponse):
                 responses.append(direct + atmo)
 
             response = np.concatenate(responses, axis=2)
+
+            if self.templates:
+                response = response[self.templates, :, :]
 
             self.cached = response
             self.cached_geo = (geo_azimuth, 0.5 * np.pi - geo_zenith)
