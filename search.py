@@ -115,7 +115,7 @@ class TargetedSearch():
         timebins1 = [(t, dur) for dur in durations for t in np.arange(0, data_start, -max(min_step, dur / num_steps)) if t >= search_range[0] - dur / 2.0]
 
         # The search bins after t0, inclusive
-        timebins2 = [(t, dur) for dur in durations for t in np.arange(0, data_end, max(min_step, dur / num_steps)) if t + dur / 2.0 <= search_range[-1]]
+        timebins2 = [(t, dur) for dur in durations for t in np.arange(max(min_step, dur / num_steps), data_end, max(min_step, dur / num_steps)) if t + dur / 2.0 <= search_range[-1]]
 
         # Combine the search windows. Format: (tstart, duration)
         timebins = sorted(timebins1)
