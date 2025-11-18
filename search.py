@@ -164,7 +164,14 @@ class TargetedSearch():
         # gather counts, background, response, and response mask for first instrument
         response, sky_mask = instrument_data.response.load_response(tstart, tstop, mask=True)
         counts, background_counts, background_var, good = instrument_data.format_data(tstart, tstop)
-        response_mask = sky_mask[np.newaxis, :, np.newaxis] & good & instrument.channel_mask
+
+        # remove channels excluded from the likelihood
+        if sum(instrument.channel_mask) < counts.shape[-1]:
+            counts = counts[instrument.channel_mask]
+            background_counts = background_counts[instrument.channel_mask]
+            background_var = background_var[instrument.channel_mask]
+            good = good[instrument.channel_mask]
+            response = response[:, :, instrument.channel_mask]
 
         # append remaining instruments
         for i in range(1, len(self.search_configuration['instruments'])):
@@ -177,20 +184,31 @@ class TargetedSearch():
                 instrument = self.search_configuration['instruments'][i]
                 instrument_data = self.instrument_data[instrument['name']]
 
+                # gather counts, background, response, and response mask for this instrument
                 counts_i, background_counts_i, background_var_i, good_i = instrument_data.format_data_by_reference(tstart, tstop, reference_frame, skygrid) # define skygrid
                 response_i, sky_mask_i = instrument_data.response.load_response(tstart, tstop, mask=True)
 
-                response_mask_i = sky_mask_i[np.newaxis, :, np.newaxis] & good_i & instrument.channel_mask
+                # remove channels excluded from the likelihood
+                if sum(instrument.channel_mask) < counts.shape[-1]:
+                    counts = counts[:, instrument.channel_mask]
+                    background_counts = background_counts[:, instrument.channel_mask]
+                    background_var = background_var[:, instrument.channel_mask]
+                    good = good[:, instrument.channel_mask]
+                    response_i = response_i[:, :, instrument.channel_mask]
 
+                # combine this instrument with the others
                 counts = np.hstack([counts, counts_i])
                 background_counts = np.hstack([background_counts, background_counts_i])
                 background_var = np.hstack([background_var, background_var_i])
+                good = np.hstack([good, good_i])
                 response = np.hstack([response, response_i])
                 sky_mask = sky_mask | sky_mask_i
-                response_mask = np.hstack([response_mask, response_mask_i])
+
+        good = good[np.newaxis, np.newaxis, :] if len(good.shape) == 1 else good[np.newaxis, :, :]
+        response = response[:, sky_mask, :]
 
         like = Likelihood(response.shape[0], self.skygrid.size)
-        like.calculate(counts, background_counts, background_var, response * response_mask)
+        like.calculate(counts, background_counts, background_var, good * response)
 
         # TODO Move to Likelihood class?
         coords_max = utils.find_location_of_max_likelihood(self.skygrid, like, reference_frame)
@@ -206,7 +224,7 @@ class TargetedSearch():
         # TODO This function relies on single-instrument context; earthmask for multi-instrument search would need to be
         #      generated or composed.
         log_sky_prior = utils.sky_prior(self.skygrid._points[:, sky_mask], reference_frame, None, None)
-        coinclr = like.coinclr(log_sky_prior, llratio=like.llr[:, sky_mask])
+        coinclr = like.coinclr(log_sky_prior, llratio=like.llr)
 
         duration = tstop - tstart
         result = (tstart, duration, ra_max, dec_max, like.max_template, like.photon_fluence/duration, *like.chisq,
