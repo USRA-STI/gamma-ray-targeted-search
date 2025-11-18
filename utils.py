@@ -215,26 +215,6 @@ def update_tte_trigtime(tte, t0):
                                 event_deadtime=tte.event_deadtime,
                                 overflow_deadtime=tte.overflow_deadtime)
 
-def find_location_of_max_likelihood(skyGrid, like, spacecraft_frame):
-    """ Calculates the location on the sky that maximizes the likelihood.
-
-    Args:
-        skyGrid (SkyGrid): object defining the detector response coordinates on the sky
-        like (Likelihood): the likelihood method class
-        spacecraft_frame (Frame): frame with spacecraft position information
-
-    Returns:
-        SkyCoord: spacecraft frame coordinates for the location that maximizes the likelihood
-    """
-    # Get the azimuth and zenith of the position that yeilds the maximum marginal likelihood
-    azimuth_max, zenith_max = skyGrid._points[:, like.max_location]
-
-    # Get the RA and Dec of the position that yeilds the maximum marginal likelihood
-    coordinate_max = SkyCoord(azimuth_max, 0.5 * np.pi - zenith_max, frame=spacecraft_frame, unit='rad')
-
-    # return ra_max, dec_max
-    return coordinate_max
-
 def sky_prior(grid, spacecraft_frame, small_map_prob=None, skymap=None):
     """ Calculate the sky prior given a map, or do uniform prior, in the spacecraft frame.
     The prior is in equatorial, so we need to rotate it to spacecraft.

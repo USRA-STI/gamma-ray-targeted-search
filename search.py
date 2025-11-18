@@ -24,11 +24,12 @@
 # implied. See the License for the specific language governing permissions and limitations under the
 # License.
 #
+import time
 import numpy as np
 
 from gdt.core.data_primitives import TimeEnergyBins
 from gdt.missions.fermi.time import Time
-from astropy.coordinates import get_sun, SkyCoord
+from astropy.coordinates import SkyCoord
 
 from likelihood import Likelihood
 from data import InstrumentData
@@ -125,26 +126,6 @@ class TargetedSearch():
 
         return timebins
 
-    # Combine counts, backgrounds, responses into one matrix each for input to Likelihood
-    def stack_instrument_outputs(self, instrument_outputs):
-        """Calculate the time bins used in the search. These represent the different emission durations of the search
-        shifted across the full search range using a given step size.
-
-        Args:
-            instrument_outputs (dict): A dictionary with keys representing instruments and values being nested
-                dictionaries with the counts, background rates, background variance, and response matrices extracted
-                from a particular timebin
-
-        Returns:
-            (tuple): 4 value tuple representing counts, background rates, background variance, and response for all
-                instruments to be used in the search
-        """
-        if len(instrument_outputs.keys()) > 1:
-            raise NotImplemented('Multi-instrument search not currently supported')
-        else:
-            vals = list(instrument_outputs.values())[0]
-            return vals
-
     def calculate_likelihood(self, tstart, tstop):
         """Generate the necessary result data for a specific timebin by iterating over the scanner's instruments,
         extracting necessary values, and computing the Likelihood
@@ -210,25 +191,17 @@ class TargetedSearch():
         like = Likelihood(response.shape[0], self.skygrid.size)
         like.calculate(counts, background_counts, background_var, good * response)
 
-        # TODO Move to Likelihood class?
-        coords_max = utils.find_location_of_max_likelihood(self.skygrid, like, reference_frame)
-        # convert to degrees for results storage
-        ra_max = coords_max.icrs.ra[0].deg
-        dec_max = coords_max.icrs.dec[0].deg
-        # azimuth_max = coords_max.az.deg
-        # zenith_max = 90.0 - coords_max.el.deg
+        # best-fit location
+        az_max, zen_max = self.skygrid._points[:, sky_mask][:, like.max_location]
+        coord_max = SkyCoord(az_max, 0.5 * np.pi - zen_max, frame=reference_frame, unit='rad')
 
-        # sun_angle = utils.get_sun_angle(coords_max, Time(t0, format='fermi'))
-        # geo_angle = reference_frame.geocenter.separation(coords_max)[0]
-
-        # TODO This function relies on single-instrument context; earthmask for multi-instrument search would need to be
-        #      generated or composed.
+        # marginalized likelihood over sky prior instead of uniform prior
         log_sky_prior = utils.sky_prior(self.skygrid._points[:, sky_mask], reference_frame, None, None)
         coinclr = like.coinclr(log_sky_prior, llratio=like.llr)
 
         duration = tstop - tstart
-        result = (tstart, duration, ra_max, dec_max, like.max_template, like.photon_fluence/duration, *like.chisq,
-                  like.marginal_llr, coinclr)
+        result = (tstart, duration, coord_max.icrs.ra[0].rad, coord_max.icrs.dec[0].rad, az_max, zen_max,
+                  like.max_template, like.photon_fluence/duration, *like.chisq, like.marginal_llr, coinclr)
 
         return result
 

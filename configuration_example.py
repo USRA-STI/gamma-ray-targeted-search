@@ -145,6 +145,9 @@ opened_results.data.sort(order='duration')
 
 # results.data = result_inputs
 
+# sun_angle = utils.get_sun_angle(coords_max, Time(t0, format='fermi'))
+# geo_angle = reference_frame.geocenter.separation(coords_max)[0]
+
 # filtered_results = results.remove_pe()
 # filtered_results = filtered_results.downselect(threshold=search_config['min_loglr'], no_empty=True)
 # filtered_results = filtered_results.downselect(combine_spec=False, fixedwin=search_config['win_width'])
