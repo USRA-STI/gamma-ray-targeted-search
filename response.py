@@ -72,6 +72,7 @@ class GBMResponse(BaseResponse):
         load_atmospheric_response: Method to load the atmospheric response matrix for a given detector and azimuth
         get_available_azimuths: Method to check which azimuths are available in the templates for a given detector
     """
+    in_rock = False
     zen_margin = np.radians(5.0)
     rocking_zen = np.radians(130.0)
     det_index = {'n0': 0, 'n1': 1, 'n2': 2, 'n3':3, 'n4': 4, 'n5': 5, 'n6': 6, 'n7': 7, 'n8': 8, 'n9': 9, 'na': 10, 'nb': 11, 'b0': 0, 'b1': 1}
@@ -169,7 +170,10 @@ class GBMResponse(BaseResponse):
             (ndarray): The atmospheric response matrix/array for one detector
         """
         if np.abs(geo_zen - self.rocking_zen) > self.zen_margin:
+            self.in_rock = False
             return 0.0
+
+        self.in_rock = True
 
         # calculate nearest available azimuths
         idx = np.argsort(np.abs(geo_az - self.available_azimuths))[:2]
