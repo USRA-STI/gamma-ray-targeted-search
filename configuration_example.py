@@ -129,13 +129,16 @@ search.add_instrument('gbm', phaiis, backfitters, response, spacecraft_frames, g
 #counts, bkgd_counts, bkgd_var, good = search.instrument_data['gbm'].format_data(1.728, 2.240)
 
 results = search.run(t0)
-print(results[0])
+print(results.data[0])
+print(results['duration'])
+print(results.search_window)
+results.save(".", "test.npz")
 exit(0)
 
-results = Results.create(len(result_inputs), template_names=["soft", "norm", "hard"])
-for i, result in enumerate(result_inputs):
-    results.data[i] = result
-results.save(".", "results.npz")
+#results = Results.create(len(result_inputs), template_names=["soft", "norm", "hard"])
+#for i, result in enumerate(result_inputs):
+#    results.data[i] = result
+#results.save(".", "results.npz")
 
 opened_results = Results.open("results.npz")
 opened_results.data.sort(order='duration')

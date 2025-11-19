@@ -33,6 +33,8 @@ from astropy.coordinates import SkyCoord
 
 from likelihood import Likelihood
 from data import InstrumentData
+from results import Results
+
 import utils
 
 
@@ -215,10 +217,9 @@ class TargetedSearch():
             (list[tuple]): A list of tuples from which a Result object can be generated for each timebin
         """
         timebins = self.get_timebins(t0)
-        results = []
-        for (tstart, dur) in timebins:
-            result = self.calculate_likelihood(tstart, tstart + dur)
-            results.append(result)
+        results = Results.create(len(timebins), time_ref=t0)
+        for i, (tstart, dur) in enumerate(timebins):
+            results.data[i] = self.calculate_likelihood(tstart, tstart + dur)
 
         return results
 

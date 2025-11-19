@@ -117,18 +117,18 @@ def downselect(results, overlap_factor=0.2, threshold=None, combine_spec=True,
 
 class Results:
     required_dtype = [
-        ('central_time', 'f8'),
+        ('tstart', 'f8'),
         ('duration', 'f8'),
         ('ra', 'f8'),
         ('dec', 'f8'),
+        ('az', 'f8'),
+        ('zen', 'f8'),
         ('template', 'i4'),
         ('flux_amplitude', 'f8'),
         ('reduced_chisq', 'f8'),
         ('chiplusdof', 'f8'),
         ('loglr', 'f8'),
         ('coinclr', 'f8'),
-        #('az', 'f8'), # optional, not necessary for multi-instrument
-        #('zen', 'f8'), # optional, not necessary for multi-instrument
         #('in_gti', 'bool'), # optional
         #('atmoscat', 'bool'), #optional
         #('flags', 'i4'), # make i8 and optional
@@ -144,9 +144,9 @@ class Results:
 
     def __init__(self):
         """Class constructor"""
-        self.data = None
+        self.data = np.empty(0, dtype=self.required_dtype)
         self.t0 = 0.0
-        self.template_names = None
+        self.template_names = np.array([])
 
     @property
     def size(self):
@@ -155,8 +155,11 @@ class Results:
 
     @property
     def search_window(self):
-        """(np.ndarray): The duration in seconds of the search window"""
-        return np.max(self['time']) - np.min(self['time'])
+        """(np.ndarray): the duration in seconds of the search window"""
+        return np.max(self['tstart'] + 0.5 * self['duration']) - np.min(self['tstart'] + 0.5 * self['duration'])
+
+    def __getitem__(self, key):
+        return self.data[key]
 
     def save(self, directory, filename=None):
         np.savez(os.path.join(directory, filename),
@@ -190,7 +193,7 @@ class Results:
         obj = cls()
         obj.data = np.empty(size, dtype=obj.required_dtype)
         obj.t0 = time_ref
-        obj.template_names = np.asarray(template_names)
+        obj.template_names = np.array([]) if template_names is None else np.array(template_names)
         return obj
 
 
