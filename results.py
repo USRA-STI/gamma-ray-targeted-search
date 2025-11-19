@@ -183,8 +183,7 @@ class Results:
 
         # fill any remaining user-defined fields
         if len(names):
-            obj.data = numpy.lib.recfunctions.append_fields(
-                obj.data, names, [file[name] for name in names])
+            obj.append_fields(names, [file[name] for name in names])
 
         return obj        
 
@@ -195,6 +194,9 @@ class Results:
         obj.t0 = time_ref
         obj.template_names = np.array([]) if template_names is None else np.array(template_names)
         return obj
+
+    def append_fields(self, names, data):
+        self.data = numpy.lib.recfunctions.append_fields(self.data, names, data)
 
 
 class FalseAlarmRate():

@@ -77,7 +77,8 @@ class GBMResponse(BaseResponse):
     rocking_zen = np.radians(130.0)
     det_index = {'n0': 0, 'n1': 1, 'n2': 2, 'n3':3, 'n4': 4, 'n5': 5, 'n6': 6, 'n7': 7, 'n8': 8, 'n9': 9, 'na': 10, 'nb': 11, 'b0': 0, 'b1': 1}
 
-    def __init__(self, detectors, skygrid, spacecraft_frames, t0, templates_directory, delta: float = np.radians(0.1), templates: list = None):
+    def __init__(self, detectors, skygrid, spacecraft_frames, t0, templates_directory, delta: float = np.radians(0.1),
+                 templates: list = None, rocking_history: list = None):
         """ Class constructor
 
         Args:
@@ -89,6 +90,7 @@ class GBMResponse(BaseResponse):
             templates_directory (str): String representing the path where the templates for the GBM response are stored
             delta (float): Angular displacement for rebuilding atmospheric scattering response
             templates (list): list of template IDs to use
+            rocking_history (list): list for storing rocking profile history
         """
         super().__init__(detectors, skygrid, spacecraft_frames)
         self.t0 = t0
@@ -96,6 +98,7 @@ class GBMResponse(BaseResponse):
         self.templates_directory = templates_directory
         self.available_azimuths = self.get_available_azimuths('n0')
         self.templates = templates
+        self.rocking_history = rocking_history
 
         self.direct = {}
         for detector in self.detectors:
@@ -142,6 +145,9 @@ class GBMResponse(BaseResponse):
             # otherwise retrieve the cached response matrix
             response = self.cached
 
+        if self.rocking_history is not None:
+            self.rocking_history.append(self.in_rock)
+
         if mask:
             return response, create_earth_mask(self.skygrid._points, geo_azimuth, geo_zenith, geo_radius)
         return response
@@ -170,10 +176,10 @@ class GBMResponse(BaseResponse):
             (ndarray): The atmospheric response matrix/array for one detector
         """
         if np.abs(geo_zen - self.rocking_zen) > self.zen_margin:
-            self.in_rock = False
+            self.in_rock = 0
             return 0.0
 
-        self.in_rock = True
+        self.in_rock = 1
 
         # calculate nearest available azimuths
         idx = np.argsort(np.abs(geo_az - self.available_azimuths))[:2]

@@ -121,7 +121,8 @@ poshist = GbmPosHist.open("data/gbm/524666469.429/glg_poshist_all_170817_v01.fit
 
 spacecraft_frames = poshist.get_spacecraft_frame()
 
-response = GBMResponse(phaiis.items, skygrid, spacecraft_frames, t0, 'templates/GBM', templates=[0, 1, 2])
+in_rock = []
+response = GBMResponse(phaiis.items, skygrid, spacecraft_frames, t0, 'templates/GBM', templates=[0, 1, 2], rocking_history=in_rock)
 
 search = TargetedSearch(search_config, skygrid)
 search.add_instrument('gbm', phaiis, backfitters, response, spacecraft_frames, goodness_of_fit)
@@ -129,10 +130,14 @@ search.add_instrument('gbm', phaiis, backfitters, response, spacecraft_frames, g
 #counts, bkgd_counts, bkgd_var, good = search.instrument_data['gbm'].format_data(1.728, 2.240)
 
 results = search.run(t0)
+results.append_fields("in_rock", in_rock)
+
 print(results.data[0])
 print(results['duration'])
 print(results.search_window)
 results.save(".", "test.npz")
+print(in_rock)
+print(results["in_rock"])
 exit(0)
 
 #results = Results.create(len(result_inputs), template_names=["soft", "norm", "hard"])
