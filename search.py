@@ -28,7 +28,6 @@ import time
 import numpy as np
 
 from gdt.core.data_primitives import TimeEnergyBins
-from gdt.missions.fermi.time import Time
 from astropy.coordinates import SkyCoord
 
 from likelihood import Likelihood
