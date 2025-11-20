@@ -192,33 +192,40 @@ class TargetedSearch():
         like = Likelihood(response.shape[0], self.skygrid.size)
         like.calculate(counts, background_counts, background_var, good * response)
 
-        # best-fit location
-        az_max, zen_max = self.skygrid._points[:, sky_mask][:, like.max_location]
-        coord_max = SkyCoord(az_max, 0.5 * np.pi - zen_max, frame=reference_frame, unit='rad')
+        return like, self.skygrid._points[:, sky_mask], reference_frame
 
-        # marginalized likelihood over sky prior instead of uniform prior
-        log_sky_prior = utils.sky_prior(self.skygrid._points[:, sky_mask], reference_frame, None, None)
-        coinclr = like.coinclr(log_sky_prior, llratio=like.llr)
-
-        duration = tstop - tstart
-        result = (tstart, duration, coord_max.icrs.ra[0].rad, coord_max.icrs.dec[0].rad, az_max, zen_max,
-                  like.max_template, like.photon_fluence/duration, *like.chisq, like.marginal_llr, coinclr)
-
-        return result
-
-    def run(self, t0):
-        """Run the search for a given central time
+    def run(self, t0, duration=None):
+        """Run the search for a given target time
 
         Args:
             t0 (float): Float representing the target time for the search
+            duration (float, optional): When specified, search a single time bin from
+                                        t0 to t0 + duration instead of the full search
 
         Returns:
             (list[tuple]): A list of tuples from which a Result object can be generated for each timebin
         """
-        timebins = self.get_timebins(t0)
+        if duration is None:
+            timebins = self.get_timebins(t0)
+        else:
+            timebins = np.array([[t0, duration]])
+
         results = Results.create(len(timebins), time_ref=t0)
-        for i, (tstart, dur) in enumerate(timebins):
-            results.data[i] = self.calculate_likelihood(tstart, tstart + dur)
+
+        for i, (tstart, duration) in enumerate(timebins):
+            # compute the likelihood for this timebin
+            like, points, reference_frame = self.calculate_likelihood(tstart, tstart + duration)
+
+            # best-fit location
+            az_max, zen_max = points[:, like.max_location]
+            coord_max = SkyCoord(az_max, 0.5 * np.pi - zen_max, frame=reference_frame, unit='rad')
+
+            # marginalized likelihood over sky prior instead of uniform prior
+            log_sky_prior = utils.sky_prior(points, reference_frame, None, None)
+            coinclr = like.coinclr(log_sky_prior, llratio=like.llr)
+
+            results.data[i] = (tstart, duration, coord_max.icrs.ra[0].rad, coord_max.icrs.dec[0].rad, az_max, zen_max,
+                               like.max_template, like.photon_fluence/duration, *like.chisq, like.marginal_llr, coinclr)
 
         return results
 
