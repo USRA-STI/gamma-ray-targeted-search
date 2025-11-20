@@ -110,14 +110,8 @@ class InstrumentData:
         Returns:
             spacecraft_frame (SpacecraftFrame): The frame the spacecraft was at nearest to the specified time
         """
-        t = Time(rel_time + self.data.get_item(self.data.items[0]).trigtime, format=self.time_format) 
-        frame = self.spacecraft_frames.at(t)
-        return frame
-
-        frame_index = np.abs(self.spacecraft_frames.obstime.value - time).argmin()
-        frame = self.spacecraft_frames[frame_index]
-
-        return frame
+        t = Time(rel_time + self.data.get_item(self.data.items[0]).trigtime, format=self.time_format)
+        return self.spacecraft_frames.at(t)
 
     def get_timebin_offset(self, reference_frame, target_skypos):
         # TODO Calculate offset based on target sky pos, reference_frame, finding the frame in this instance's frames
@@ -135,11 +129,12 @@ class InstrumentData:
                          used to remove regions blocked by the Earth, Moon, etc.
 
         Returns:
-            ndarray: A matrix representing the expected response at a given timebin, representing all detectors
+            tuple: ((np.ndarray, np.ndarry), SpacecraftFrame) when mask = True, else (np.ndarray, SpacecraftFrame)
         """
         tcent = 0.5 * (tstart + tstop)
+        frame = self.get_spacecraft_frame(tcent)
 
-        return self.response.load_response(self.get_spacecraft_frame(tcent), mask)
+        return self.response.load_response(frame, mask), frame
 
     def format_response_by_reference(self, tstart, tstop, reference_frame, skygrid, mask=False):
         """Extracts the expected response matrix for this instrument, representing all detectors
@@ -153,7 +148,7 @@ class InstrumentData:
                          used to remove regions blocked by the Earth, Moon, etc.
 
         Returns:
-            ndarray: A matrix representing the expected response at a given timebin, representing all detectors
+            tuple: ((np.ndarray, np.ndarry), SpacecraftFrame) when mask = True, else (np.ndarray, SpacecraftFrame)
         """
         # need to retrieve reponse and rotate into reference frame
         raise NotImplemented("Loading response for a sky position is not implemented yet.")

@@ -142,10 +142,9 @@ class TargetedSearch():
         # always start with the first instrument in the list
         instrument = self.search_configuration['instruments'][0]
         instrument_data = self.instrument_data[instrument['name']]
-        reference_frame = instrument_data.get_spacecraft_frame((tstart + tstop) / 2)
 
         # gather counts, background, response, and response mask for first instrument
-        response, sky_mask = instrument_data.format_response(tstart, tstop, mask=True)
+        (response, sky_mask), reference_frame = instrument_data.format_response(tstart, tstop, mask=True)
         counts, background_counts, background_var, good = instrument_data.format_data(tstart, tstop)
 
         # remove channels excluded from the likelihood
@@ -168,7 +167,7 @@ class TargetedSearch():
                 instrument_data = self.instrument_data[instrument['name']]
 
                 # gather counts, background, response, and response mask for this instrument
-                response_i, sky_mask_i = instrument_data.format_response_by_reference(tstart, tstop, reference_frame, skygrid, mask=True)
+                (response_i, sky_mask_i), frame = instrument_data.format_response_by_reference(tstart, tstop, reference_frame, skygrid, mask=True)
                 counts_i, background_counts_i, background_var_i, good_i = instrument_data.format_data_by_reference(tstart, tstop, reference_frame, skygrid) # define skygrid
 
                 # remove channels excluded from the likelihood
