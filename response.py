@@ -28,7 +28,6 @@ import os
 import numpy as np
 
 from abc import ABC, abstractmethod
-from gdt.missions.fermi.time import Time
 from gdt.missions.fermi.gbm.detectors import GbmDetectors
 from utils import get_geo_coordinates, create_earth_mask
 from astropy.coordinates import angular_separation
@@ -40,18 +39,16 @@ class BaseResponse(ABC):
     Attributes:
         detectors (list[str]): List of detector names
         skygrid (Skygrid): Instance of Skygrid class with expected sky positions and other relevant structures
-        spacecraft_frames (SpacecraftFrames): The spacecraft frames for the instrument
 
     Public Methods:
-        load_response: Abstract method to compute the response matrix for a given time bin
+        load_response: Abstract method to compute the response matrix for a spacecraft frame
     """
-    def __init__(self, detectors, skygrid, spacecraft_frames):
+    def __init__(self, detectors, skygrid):
         self.detectors = detectors
         self.skygrid = skygrid
-        self.spacecraft_frames = spacecraft_frames
 
     @abstractmethod
-    def load_response(self, tstart, tstop, mask=False, **kwargs):
+    def load_response(self, frame, mask=False, **kwargs):
         pass
 
 
@@ -61,8 +58,6 @@ class GBMResponse(BaseResponse):
     Attributes:
         detectors (list[str]): List of detector names
         skygrid (Skygrid): Instance of Skygrid class with expected sky positions and other relevant structures
-        spacecraft_frames (SpacecraftFrames): The spacecraft frames for the instrument
-        t0 (float): Central search time
         templates_directory (str): String representing the location where response templates are stored
         delta (float): Angular displacement for rebuilding atmospheric scattering response
 
@@ -77,23 +72,19 @@ class GBMResponse(BaseResponse):
     rocking_zen = np.radians(130.0)
     det_index = {'n0': 0, 'n1': 1, 'n2': 2, 'n3':3, 'n4': 4, 'n5': 5, 'n6': 6, 'n7': 7, 'n8': 8, 'n9': 9, 'na': 10, 'nb': 11, 'b0': 0, 'b1': 1}
 
-    def __init__(self, detectors, skygrid, spacecraft_frames, t0, templates_directory, delta: float = np.radians(0.1),
+    def __init__(self, detectors, skygrid, templates_directory, delta: float = np.radians(0.1),
                  templates: list = None, rocking_history: list = None):
         """ Class constructor
 
         Args:
             detectors (list[str]): List of detector names
             skygrid (Skygrid): The skygrid this response should be generated over
-            spacecraft_frames (SpacecraftFrame): The spacecraft frames for the instrument this response is being
-                generated for
-            t0 (float): The central time of the search
             templates_directory (str): String representing the path where the templates for the GBM response are stored
             delta (float): Angular displacement for rebuilding atmospheric scattering response
             templates (list): list of template IDs to use
             rocking_history (list): list for storing rocking profile history
         """
-        super().__init__(detectors, skygrid, spacecraft_frames)
-        self.t0 = t0
+        super().__init__(detectors, skygrid)
         self.delta = delta
         self.templates_directory = templates_directory
         self.available_azimuths = self.get_available_azimuths('n0')
@@ -107,22 +98,18 @@ class GBMResponse(BaseResponse):
         self.cached = None
         self.cached_geo = None
 
-    def load_response(self, tstart, tstop, mask=False):
-        """Generates the response matrix for a given time bin
+    def load_response(self, frame, mask=False):
+        """Generates the response matrix for a given spacecraft frame
 
         Args:
-            tstart (float): Start of the time bin
-            tstop (float): End of the time bin
+            frame (SpacecraftFrame): frame with spacecraft position and orientation
             mask (bool): return earth mask with response matrix
 
         Returns:
             (tuple[ndarray]): tuple with matrices for instrument response and the Earth mask representing
                 sky positions that were occulted by the earth at the specified bin
         """
-        tcenter = 0.5 * (tstart + tstop) + self.t0
-        tcenter = Time(tcenter, format='fermi')
-        spacecraft_frame = self.spacecraft_frames.at(tcenter)
-        geo_azimuth, geo_zenith, geo_radius = get_geo_coordinates(spacecraft_frame)
+        geo_azimuth, geo_zenith, geo_radius = get_geo_coordinates(frame)
 
         if self.cached is None or angular_separation(geo_azimuth, 0.5 * np.pi - geo_zenith, *self.cached_geo) >= self.delta:
             # build reponse matrix from direct + atmospheric scattering components

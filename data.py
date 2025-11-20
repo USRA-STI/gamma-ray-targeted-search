@@ -27,6 +27,7 @@
 import os
 import numpy as np
 
+from astropy.time import Time
 
 class FitStatus:
     """Placeholder class for fit status behavior
@@ -54,12 +55,13 @@ class InstrumentData:
         response (BaseResponse): Instrument response object
         frames (SpacecraftFrame): Position history object
         goodness_of_fit (FitStatus): Collection of background fit statuses for each detector
+        time_format (str): Time format used by data
 
     Public Methods:
         format_data: Retrieve data counts, background counts, background variance, and goodness of fit for a time interval
         format_data_by_reference: Similar to format_data, but the time interval is calculated relative to another instrument
     """
-    def __init__(self, data, fitters, response, spacecraft_frames, goodness_of_fit):
+    def __init__(self, data, fitters, response, spacecraft_frames, goodness_of_fit, time_format):
         """ Class constructor
 
         Args:
@@ -87,6 +89,7 @@ class InstrumentData:
         self.response = response
         self.spacecraft_frames = spacecraft_frames
         self.goodness_of_fit = goodness_of_fit
+        self.time_format = time_format
 
     @property
     def detectors(self):
@@ -98,27 +101,7 @@ class InstrumentData:
         """list[Ebounds] representing the energy bounds of each detector in the instrument"""
         return self.data.ebounds()
 
-    def load_response(self, tstart, tstop, skygrid, earthmask=False):
-        """Extracts the expected response matrix for this instrument, representing all detectors
-
-        Args:
-            tstart (float): Start of the time bin
-            tstop (float): End of the time bin
-            skygrid (Skygrid): The skygrid we are searching over. Currently unused.
-            earthmask (bool): A boolean representing whether or not to apply/extract the earthmask at this time bin
-
-        Returns:
-            ndarray: A matrix representing the expected response at a given timebin, representing all detectors
-        """
-        return self.response.load_response(tstart, tstop)
-
-    def load_skypos_response(self, tstart, tstop, target_skypos, reference_frame, earthmask=False):
-        # TODO Additional function to compute response given a target skypos. Should be used by scanner when this
-        #      instrument is not the reference instrument
-        # Note: Can this function take just the spacecraft frame itself rather than calculating it
-        raise NotImplemented("Loading response for a sky position is not implemented yet.")
-
-    def get_spacecraft_frame(self, time):
+    def get_spacecraft_frame(self, rel_time):
         """Extracts this instrument's spacecraft frame that is the closest match to where it would be at a given time
 
         Args:
@@ -127,16 +110,53 @@ class InstrumentData:
         Returns:
             spacecraft_frame (SpacecraftFrame): The frame the spacecraft was at nearest to the specified time
         """
-        frame_index = np.abs(self.spacecraft_frames.obstime.value - time).argmin()
-        spacecraft_frame = self.spacecraft_frames[frame_index]
+        t = Time(rel_time + self.data.get_item(self.data.items[0]).trigtime, format=self.time_format) 
+        frame = self.spacecraft_frames.at(t)
+        return frame
 
-        return spacecraft_frame
+        frame_index = np.abs(self.spacecraft_frames.obstime.value - time).argmin()
+        frame = self.spacecraft_frames[frame_index]
+
+        return frame
 
     def get_timebin_offset(self, reference_frame, target_skypos):
         # TODO Calculate offset based on target sky pos, reference_frame, finding the frame in this instance's frames
         #      that would correspond to when the energy beam would reach this instrument
         #      Return a float representing the timebin offset, along with the spacecraft frame associated with it.
         return 0
+
+    def format_response(self, tstart, tstop, mask=False):
+        """Extracts the expected response matrix for this instrument, representing all detectors
+
+        Args:
+            tstart (float): Start of the time bin
+            tstop (float): End of the time bin
+            mask (bool): A boolean representing whether or not to apply/extract a sky mask
+                         used to remove regions blocked by the Earth, Moon, etc.
+
+        Returns:
+            ndarray: A matrix representing the expected response at a given timebin, representing all detectors
+        """
+        tcent = 0.5 * (tstart + tstop)
+
+        return self.response.load_response(self.get_spacecraft_frame(tcent), mask)
+
+    def format_response_by_reference(self, tstart, tstop, reference_frame, skygrid, mask=False):
+        """Extracts the expected response matrix for this instrument, representing all detectors
+
+        Args:
+            tstart (float): Start of the time bin
+            tstop (float): End of the time bin
+            reference_frame (SpacecraftFrame): reference spacecraft frame
+            skygrid (Skygrid): The skygrid we are searching over, from the scanner
+            mask (bool): A boolean representing whether or not to apply/extract a sky mask
+                         used to remove regions blocked by the Earth, Moon, etc.
+
+        Returns:
+            ndarray: A matrix representing the expected response at a given timebin, representing all detectors
+        """
+        # need to retrieve reponse and rotate into reference frame
+        raise NotImplemented("Loading response for a sky position is not implemented yet.")
 
     def format_data(self, tstart, tstop):
         """Formats the instrument's counts, background rates, background variance, and response, including masking only

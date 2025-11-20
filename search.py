@@ -68,7 +68,7 @@ class TargetedSearch():
         self.skygrid = skygrid
         self.instrument_data = {}
 
-    def add_instrument(self, name, data, fitters, response_generator, frames, fit_checker):
+    def add_instrument(self, name, data, fitters, response_generator, frames, fit_checker, time_format):
         """Create and add a new InstrumentData instance to scanner's instrument_data attribute
 
         Args:
@@ -82,8 +82,9 @@ class TargetedSearch():
                 as input and outputs a ndarray of booleans identifying goodness of fit
             backup_fitters (list[DataCollection[BackgroundFitter]]): A list of replacement background fitters that would
                 override parameter fitters in the case of a bad fit of the data
+            time_format (str): Instrument time format used for data
         """
-        self.instrument_data[name] = InstrumentData(data, fitters, response_generator, frames, fit_checker)
+        self.instrument_data[name] = InstrumentData(data, fitters, response_generator, frames, fit_checker, time_format)
 
     def get_timebins(self, t0=None):
         """Calculate the time bins used in the search. These represent the different emission durations of the search
@@ -145,7 +146,7 @@ class TargetedSearch():
         reference_frame = instrument_data.get_spacecraft_frame((tstart + tstop) / 2)
 
         # gather counts, background, response, and response mask for first instrument
-        response, sky_mask = instrument_data.response.load_response(tstart, tstop, mask=True)
+        response, sky_mask = instrument_data.format_response(tstart, tstop, mask=True)
         counts, background_counts, background_var, good = instrument_data.format_data(tstart, tstop)
 
         # remove channels excluded from the likelihood
@@ -168,8 +169,8 @@ class TargetedSearch():
                 instrument_data = self.instrument_data[instrument['name']]
 
                 # gather counts, background, response, and response mask for this instrument
+                response_i, sky_mask_i = instrument_data.format_response_by_reference(tstart, tstop, reference_frame, skygrid, mask=True)
                 counts_i, background_counts_i, background_var_i, good_i = instrument_data.format_data_by_reference(tstart, tstop, reference_frame, skygrid) # define skygrid
-                response_i, sky_mask_i = instrument_data.response.load_response(tstart, tstop, mask=True)
 
                 # remove channels excluded from the likelihood
                 if sum(instrument.channel_mask) < counts.shape[-1]:

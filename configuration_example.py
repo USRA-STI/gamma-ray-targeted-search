@@ -122,10 +122,10 @@ poshist = GbmPosHist.open("data/gbm/524666469.429/glg_poshist_all_170817_v01.fit
 spacecraft_frames = poshist.get_spacecraft_frame()
 
 in_rock = []
-response = GBMResponse(phaiis.items, skygrid, spacecraft_frames, t0, 'templates/GBM', templates=[0, 1, 2], rocking_history=in_rock)
+response = GBMResponse(phaiis.items, skygrid, 'templates/GBM', templates=[0, 1, 2], rocking_history=in_rock)
 
 search = TargetedSearch(search_config, skygrid)
-search.add_instrument('gbm', phaiis, backfitters, response, spacecraft_frames, goodness_of_fit)
+search.add_instrument('gbm', phaiis, backfitters, response, spacecraft_frames, goodness_of_fit, time_format='fermi')
 
 #counts, bkgd_counts, bkgd_var, good = search.instrument_data['gbm'].format_data(1.728, 2.240)
 
