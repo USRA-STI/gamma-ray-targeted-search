@@ -128,23 +128,23 @@ class TargetedSearch():
 
         return timebins
 
-    def calculate_likelihood(self, tstart, tstop):
-        """Generate the necessary result data for a specific timebin by iterating over the scanner's instruments,
-        extracting necessary values, and computing the Likelihood
+    def calculate_likelihood(self, tstart, tstop, mask=False):
+        """Calculate the likelihood for a given time interval defined by [tstart, tstop]
 
         Args:
             tstart (float): Float representing the start of the timebin
             tstop (float): Float representing the end of the timebin
+            mask (bool): Mask obstructed portions (Earth, Moon, etc) of the sky when True
 
         Returns:
-            (tuple): Contains necessary parameters to generate a Result object for this timebin
+            tuple: Tuple with the likelihood result, skygrid, and reference frame for the skygrid
         """
         # always start with the first instrument in the list
         instrument = self.search_configuration['instruments'][0]
         instrument_data = self.instrument_data[instrument['name']]
 
         # gather counts, background, response, and response mask for first instrument
-        (response, sky_mask), reference_frame = instrument_data.format_response(tstart, tstop, mask=True)
+        (response, sky_mask), reference_frame = instrument_data.format_response(tstart, tstop, mask=mask)
         counts, background_counts, background_var, good = instrument_data.format_data(tstart, tstop)
 
         # remove channels excluded from the likelihood
@@ -167,7 +167,7 @@ class TargetedSearch():
                 instrument_data = self.instrument_data[instrument['name']]
 
                 # gather counts, background, response, and response mask for this instrument
-                (response_i, sky_mask_i), frame = instrument_data.format_response_by_reference(tstart, tstop, reference_frame, skygrid, mask=True)
+                (response_i, sky_mask_i), frame = instrument_data.format_response_by_reference(tstart, tstop, reference_frame, skygrid, mask=mask)
                 counts_i, background_counts_i, background_var_i, good_i = instrument_data.format_data_by_reference(tstart, tstop, reference_frame, skygrid) # define skygrid
 
                 # remove channels excluded from the likelihood
@@ -214,7 +214,7 @@ class TargetedSearch():
 
         for i, (tstart, duration) in enumerate(timebins):
             # compute the likelihood for this timebin
-            like, points, reference_frame = self.calculate_likelihood(tstart, tstart + duration)
+            like, points, reference_frame = self.calculate_likelihood(tstart, tstart + duration, mask=True)
 
             # best-fit location
             az_max, zen_max = points[:, like.max_location]
