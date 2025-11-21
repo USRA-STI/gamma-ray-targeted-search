@@ -194,23 +194,18 @@ class TargetedSearch():
 
         return like, self.skygrid._points[:, sky_mask], reference_frame
 
-    def run(self, t0, duration=None):
+    def run(self, timebins, time_ref=None):
         """Run the search for a given target time
 
         Args:
-            t0 (float): Float representing the target time for the search
-            duration (float, optional): When specified, search a single time bin from
-                                        t0 to t0 + duration instead of the full search
+            timebins (np.ndarry): Array of time bins to search in with a format
+                                  of [[tstart1, duration1], [tstart2, ... ]
+            time_ref (float, optional): Reference time for results file
 
         Returns:
             (list[tuple]): A list of tuples from which a Result object can be generated for each timebin
         """
-        if duration is None:
-            timebins = self.get_timebins(t0)
-        else:
-            timebins = np.array([[t0, duration]])
-
-        results = Results.create(len(timebins), time_ref=t0)
+        results = Results.create(len(timebins), time_ref=time_ref)
 
         for i, (tstart, duration) in enumerate(timebins):
             # compute the likelihood for this timebin
