@@ -152,28 +152,30 @@ class TargetedSearch():
 
         # append remaining instruments
         for i in range(1, len(self.search_configuration['instruments'])):
+            # Throw error here because this code is untested. There are probably typos.
+            raise NotImplemented("Searching multiple instruments is not implemented yet.")
 
-                instrument = self.search_configuration['instruments'][i]
-                instrument_data = self.instrument_data[instrument['name']]
+            instrument = self.search_configuration['instruments'][i]
+            instrument_data = self.instrument_data[instrument['name']]
 
-                # gather counts, background, response, and sky mask matrix for this instrument
-                counts_i, background_counts_i, background_var_i, good_i, response_matrix_i, sky_mask_matrix_i = \
-                    instrument_data.integrate(tstart, tstop, reference=(refrence_frame, self.skygrid), sky_mask=sky_mask, channel_mask=instrument.channel_mask)
+            # gather counts, background, response, and sky mask matrix for this instrument
+            counts_i, background_counts_i, background_var_i, good_i, response_matrix_i, sky_mask_matrix_i = \
+                instrument_data.integrate(tstart, tstop, reference=(refrence_frame, self.skygrid), sky_mask=sky_mask, channel_mask=instrument.channel_mask)
 
-                # update first instrument shape before stacking
-                if i == 1:
-                    counts = np.full(response.shape, counts)
-                    background_counts = np.full(response.shape, background_counts)
-                    background_var = np.full(response.shape, background_var)
-                    good = np.full(response.shape, good)
+            # update first instrument shape before stacking
+            if i == 1:
+                counts = np.full(response.shape, counts)
+                background_counts = np.full(response.shape, background_counts)
+                background_var = np.full(response.shape, background_var)
+                good = np.full(response.shape, good)
 
-                # stack this instrument with the others
-                counts = np.hstack([counts, counts_i])
-                background_counts = np.hstack([background_counts, background_counts_i])
-                background_var = np.hstack([background_var, background_var_i])
-                good = np.hstack([good, good_i])
-                response_matrix = np.hstack([response_matrix, response_matrix_i])
-                sky_mask_matrix = sky_mask_matrix | sky_mask_matrix_i
+            # stack this instrument with the others
+            counts = np.hstack([counts, counts_i])
+            background_counts = np.hstack([background_counts, background_counts_i])
+            background_var = np.hstack([background_var, background_var_i])
+            good = np.hstack([good, good_i])
+            response_matrix = np.hstack([response_matrix, response_matrix_i])
+            sky_mask_matrix = sky_mask_matrix | sky_mask_matrix_i
 
         # apply sky mask matrix
         response_matrix = response_matrix[:, sky_mask_matrix, :]
