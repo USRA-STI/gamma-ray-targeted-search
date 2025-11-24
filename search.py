@@ -189,6 +189,9 @@ class TargetedSearch():
         else:
             good = good[np.newaxis, np.newaxis, :]
 
+        # TO DO: The Likelihood class currently flattens the response_matrix over
+        #        spectral templates x sky position assuming that counts is a 1D vector.
+        #        Need to account for 2D counts shape.
         like = Likelihood(response_matrix.shape[0], self.skygrid.size)
         like.calculate(counts, background_counts, background_var, good * response_matrix)
 
