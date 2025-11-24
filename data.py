@@ -91,6 +91,15 @@ class InstrumentData:
         self.goodness_of_fit = goodness_of_fit
         self.time_format = time_format
 
+        # initialize values for the integrate() method
+        self.good = None
+        self.frame = None
+        self.counts = None
+        self.sky_mask = None
+        self.background_var = None
+        self.response_matrix = None
+        self.background_counts = None
+
     @property
     def detectors(self):
         """list[str] representing the names of the instrument's detectors"""
@@ -119,14 +128,48 @@ class InstrumentData:
         #      Return a float representing the timebin offset, along with the spacecraft frame associated with it.
         return 0
 
-    def format_response(self, tstart, tstop, mask=False):
+    def integrate(self, tstart, tstop, reference=None, sky_mask=True, channel_mask=None):
+        """ Method to integrate data and responses over time interval [tstart, tstop]
+
+        Args:
+            tstart (float): Start of the time bin
+            tstop (float): End of the time bin
+            reference (tuple): Tuple with a reference frame and skygrid
+            sky_mask (bool): A boolean representing whether or not to apply/extract a sky mask
+                             used to remove regions blocked by the Earth, Moon, etc.
+            channel_mask (np.ndarray): A channel mask to apply on the return values
+
+        Returns:
+            tuple: Tuple with arrays for counts, background counts, background variance,
+                   good fit status, response matrix, and sky mask matrix
+        """
+        # Note: we cache return values within the class so that users can access the same values across
+        #       calculations for the likelihood, signal-to-noise ratio, phospherescence veto, etc.
+        if reference is None:
+            rsp, self.frame = self.format_response(tstart, tstop, sky_mask=sky_mask)
+            self.counts, self.background_counts, self.background_var, self.good = self.format_data(tstart, tstop)
+        else:
+            rsp, self.frame = self.format_response_by_reference(tstart, tstop, *reference, sky_mask=sky_mask)
+            self.counts, self.background_counts, self.background_var, self.good = self.format_data_by_reference(tstart, tstop, *reference)
+
+        self.response_matrix, self.sky_mask_matrix = rsp if sky_mask else (rsp, None)
+
+        # remove masked channels when requested
+        if channel_mask is not None and sum(channel_mask) < self.counts.shape[-1]:
+            return self.counts[..., channel_mask], self.background_counts[..., channel_mask], \
+                   self.background_var[..., channel_mask], self.good[..., channel_mask], \
+                   self.response_matrix[..., channel_mask], self.sky_mask_matrix
+
+        return self.counts, self.background_counts, self.background_var, self.good, self.response_matrix, self.sky_mask_matrix
+
+    def format_response(self, tstart, tstop, sky_mask=False):
         """Extracts the expected response matrix for this instrument, representing all detectors
 
         Args:
             tstart (float): Start of the time bin
             tstop (float): End of the time bin
-            mask (bool): A boolean representing whether or not to apply/extract a sky mask
-                         used to remove regions blocked by the Earth, Moon, etc.
+            sky_mask (bool): A boolean representing whether or not to apply/extract a sky mask
+                             used to remove regions blocked by the Earth, Moon, etc.
 
         Returns:
             tuple: ((np.ndarray, np.ndarry), SpacecraftFrame) when mask = True, else (np.ndarray, SpacecraftFrame)
@@ -134,9 +177,9 @@ class InstrumentData:
         tcent = 0.5 * (tstart + tstop)
         frame = self.get_spacecraft_frame(tcent)
 
-        return self.response.load_response(frame, mask), frame
+        return self.response.load_response(frame, sky_mask), frame
 
-    def format_response_by_reference(self, tstart, tstop, reference_frame, skygrid, mask=False):
+    def format_response_by_reference(self, tstart, tstop, reference_frame, skygrid, sky_mask=False):
         """Extracts the expected response matrix for this instrument, representing all detectors
 
         Args:
@@ -144,8 +187,8 @@ class InstrumentData:
             tstop (float): End of the time bin
             reference_frame (SpacecraftFrame): reference spacecraft frame
             skygrid (Skygrid): The skygrid we are searching over, from the scanner
-            mask (bool): A boolean representing whether or not to apply/extract a sky mask
-                         used to remove regions blocked by the Earth, Moon, etc.
+            sky_mask (bool): A boolean representing whether or not to apply/extract a sky mask
+                             used to remove regions blocked by the Earth, Moon, etc.
 
         Returns:
             tuple: ((np.ndarray, np.ndarry), SpacecraftFrame) when mask = True, else (np.ndarray, SpacecraftFrame)

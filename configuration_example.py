@@ -129,7 +129,8 @@ search.add_instrument('gbm', phaiis, backfitters, response, spacecraft_frames, g
 
 #counts, bkgd_counts, bkgd_var, good = search.instrument_data['gbm'].format_data(1.728, 2.240)
 
-results = search.run(t0)
+timebins = search.get_timebins(t0)
+results = search.run(timebins)
 results.append_fields("in_rock", in_rock)
 
 print(results.data[0])

@@ -128,13 +128,13 @@ class TargetedSearch():
 
         return timebins
 
-    def calculate_likelihood(self, tstart, tstop, mask=False):
+    def calculate_likelihood(self, tstart, tstop, sky_mask=True):
         """Calculate the likelihood for a given time interval defined by [tstart, tstop]
 
         Args:
             tstart (float): Float representing the start of the timebin
             tstop (float): Float representing the end of the timebin
-            mask (bool): Mask obstructed portions (Earth, Moon, etc) of the sky when True
+            sky_mask (bool, optional): Mask obstructed sky locations (Earth, Moon, etc) when True
 
         Returns:
             tuple: Tuple with the likelihood result, skygrid, and reference frame for the skygrid
@@ -143,64 +143,63 @@ class TargetedSearch():
         instrument = self.search_configuration['instruments'][0]
         instrument_data = self.instrument_data[instrument['name']]
 
-        # gather counts, background, response, and response mask for first instrument
-        (response, sky_mask), reference_frame = instrument_data.format_response(tstart, tstop, mask=mask)
-        counts, background_counts, background_var, good = instrument_data.format_data(tstart, tstop)
+        # gather counts, background, response, and sky mask matrix for first instrument
+        counts, background_counts, background_var, good, response_matrix, sky_mask_matrix = \
+            instrument_data.integrate(tstart, tstop, sky_mask=sky_mask, channel_mask=instrument.channel_mask)
 
-        # remove channels excluded from the likelihood
-        if sum(instrument.channel_mask) < counts.shape[-1]:
-            counts = counts[instrument.channel_mask]
-            background_counts = background_counts[instrument.channel_mask]
-            background_var = background_var[instrument.channel_mask]
-            good = good[instrument.channel_mask]
-            response = response[:, :, instrument.channel_mask]
+        # save the first instrument frame as a reference for other instruments
+        reference_frame = instrument_data.frame
 
         # append remaining instruments
         for i in range(1, len(self.search_configuration['instruments'])):
 
-                if i == 1:
-                    # update instrument shape to match shape needed for np.hstack
-                    counts = np.full(response.shape, counts)
-                    background_counts = np.full(response.shape, background_counts)
-
                 instrument = self.search_configuration['instruments'][i]
                 instrument_data = self.instrument_data[instrument['name']]
 
-                # gather counts, background, response, and response mask for this instrument
-                (response_i, sky_mask_i), frame = instrument_data.format_response_by_reference(tstart, tstop, reference_frame, skygrid, mask=mask)
-                counts_i, background_counts_i, background_var_i, good_i = instrument_data.format_data_by_reference(tstart, tstop, reference_frame, skygrid) # define skygrid
+                # gather counts, background, response, and sky mask matrix for this instrument
+                counts_i, background_counts_i, background_var_i, good_i, response_matrix_i, sky_mask_matrix_i = \
+                    instrument_data.integrate(tstart, tstop, reference=(refrence_frame, self.skygrid), sky_mask=sky_mask, channel_mask=instrument.channel_mask)
 
-                # remove channels excluded from the likelihood
-                if sum(instrument.channel_mask) < counts.shape[-1]:
-                    counts = counts[:, instrument.channel_mask]
-                    background_counts = background_counts[:, instrument.channel_mask]
-                    background_var = background_var[:, instrument.channel_mask]
-                    good = good[:, instrument.channel_mask]
-                    response_i = response_i[:, :, instrument.channel_mask]
+                # update first instrument shape before stacking
+                if i == 1:
+                    counts = np.full(response.shape, counts)
+                    background_counts = np.full(response.shape, background_counts)
+                    background_var = np.full(response.shape, background_var)
+                    good = np.full(response.shape, good)
 
-                # combine this instrument with the others
+                # stack this instrument with the others
                 counts = np.hstack([counts, counts_i])
                 background_counts = np.hstack([background_counts, background_counts_i])
                 background_var = np.hstack([background_var, background_var_i])
                 good = np.hstack([good, good_i])
-                response = np.hstack([response, response_i])
-                sky_mask = sky_mask | sky_mask_i
+                response_matrix = np.hstack([response_matrix, response_matrix_i])
+                sky_mask_matrix = sky_mask_matrix | sky_mask_matrix_i
 
-        good = good[np.newaxis, np.newaxis, :] if len(good.shape) == 1 else good[np.newaxis, :, :]
-        response = response[:, sky_mask, :]
+        # apply sky mask matrix
+        response_matrix = response_matrix[:, sky_mask_matrix, :]
 
-        like = Likelihood(response.shape[0], self.skygrid.size)
-        like.calculate(counts, background_counts, background_var, good * response)
+        # match remaining matrix shapes
+        if len(counts.shape) > 1:
+            counts = counts[:, sky_mask_matrix, :]
+            background_counts = background_counts[:, sky_mask_matrix, :]
+            background_var = background_car[:, sky_mask_matrix, :]
+            good = good[:, sky_mask_matrix, :]
+        else:
+            good = good[np.newaxis, np.newaxis, :]
 
-        return like, self.skygrid._points[:, sky_mask], reference_frame
+        like = Likelihood(response_matrix.shape[0], self.skygrid.size)
+        like.calculate(counts, background_counts, background_var, good * response_matrix)
 
-    def run(self, timebins, time_ref=None):
+        return like, self.skygrid._points[:, sky_mask_matrix], reference_frame
+
+    def run(self, timebins, time_ref=None, sky_mask=True):
         """Run the search for a given target time
 
         Args:
             timebins (np.ndarry): Array of time bins to search in with a format
                                   of [[tstart1, duration1], [tstart2, ... ]
             time_ref (float, optional): Reference time for results file
+            sky_mask (bool, optional): Mask obstructed sky locations (Earth, Moon, etc) when True
 
         Returns:
             (list[tuple]): A list of tuples from which a Result object can be generated for each timebin
@@ -209,7 +208,7 @@ class TargetedSearch():
 
         for i, (tstart, duration) in enumerate(timebins):
             # compute the likelihood for this timebin
-            like, points, reference_frame = self.calculate_likelihood(tstart, tstart + duration, mask=True)
+            like, points, reference_frame = self.calculate_likelihood(tstart, tstart + duration, sky_mask=sky_mask)
 
             # best-fit location
             az_max, zen_max = points[:, like.max_location]
