@@ -71,7 +71,7 @@ class TargetedSearch():
         self.like_points = None
         self.like_frame = None
 
-    def add_instrument(self, name, data, fitters, response_generator, frames, fit_checker, time_format):
+    def add_instrument(self, name, data, fitters, response_generator, fit_checker):
         """Create and add a new InstrumentData instance to scanner's instrument_data attribute
 
         Args:
@@ -80,14 +80,10 @@ class TargetedSearch():
             fitters (DataCollection[BackgroundFitter]): Data Collection to extract background counts and variance
             response_generator (BaseResponseGenerator): Subclass of BaseResponseGenerator that can represent this
                 instrument's expected response at a particular timebin
-            frames (SpacecraftFrame): Object with position history to extract spacecraft frames at a particular time
             fit_checker (Callable[[ndarray, ndarray], ndarray]): TODO function that takes counts and background rates
                 as input and outputs a ndarray of booleans identifying goodness of fit
-            backup_fitters (list[DataCollection[BackgroundFitter]]): A list of replacement background fitters that would
-                override parameter fitters in the case of a bad fit of the data
-            time_format (str): Instrument time format used for data
         """
-        self.instrument_data[name] = InstrumentData(data, fitters, response_generator, frames, fit_checker, time_format)
+        self.instrument_data[name] = InstrumentData(data, fitters, response_generator, fit_checker)
 
     def get_timebins(self, t0=None):
         """Calculate the time bins used in the search. These represent the different emission durations of the search
@@ -149,7 +145,7 @@ class TargetedSearch():
             instrument_data.integrate(tstart, tstop, sky_mask=sky_mask, channel_mask=instrument.channel_mask)
 
         # save the first instrument frame as a reference for other instruments
-        reference_frame = instrument_data.frame
+        reference_frame = instrument_data.response.frame
 
         # append remaining instruments
         for i in range(1, len(self.search_configuration['instruments'])):

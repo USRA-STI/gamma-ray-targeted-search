@@ -27,8 +27,6 @@
 import os
 import numpy as np
 
-from astropy.time import Time
-
 class FitStatus:
     """Placeholder class for fit status behavior
 
@@ -53,22 +51,19 @@ class InstrumentData:
         data (DataCollection): Collection of data for each detector
         fitters (DataCollection): Collection of background fits for each detector
         response (BaseResponse): Instrument response object
-        frames (SpacecraftFrame): Position history object
         goodness_of_fit (FitStatus): Collection of background fit statuses for each detector
-        time_format (str): Time format used by data
 
     Public Methods:
         format_data: Retrieve data counts, background counts, background variance, and goodness of fit for a time interval
         format_data_by_reference: Similar to format_data, but the time interval is calculated relative to another instrument
     """
-    def __init__(self, data, fitters, response, spacecraft_frames, goodness_of_fit, time_format):
+    def __init__(self, data, fitters, response, goodness_of_fit):
         """ Class constructor
 
         Args:
             data (DataCollection[TTE|Phaii]): Data Collection to extract counts and exposure for this instrument
             fitters (DataCollection[BackgroundFitter]): Data Collection to extract background counts and variance
             response (BaseResponse): Instrument response object
-            frames (SpacecraftFrame): Position history object
             goodness_of_fit (FitStatus): Collection of background fit statuses for each detector
         """
         # Sanity checks
@@ -87,9 +82,7 @@ class InstrumentData:
         self.data = data
         self.fitters = fitters
         self.response = response
-        self.spacecraft_frames = spacecraft_frames
         self.goodness_of_fit = goodness_of_fit
-        self.time_format = time_format
 
         # initialize values for the integrate() method
         self.good = None
@@ -109,18 +102,6 @@ class InstrumentData:
     def ebounds(self):
         """list[Ebounds] representing the energy bounds of each detector in the instrument"""
         return self.data.ebounds()
-
-    def get_spacecraft_frame(self, rel_time):
-        """Extracts this instrument's spacecraft frame that is the closest match to where it would be at a given time
-
-        Args:
-            time (float): Target time
-
-        Returns:
-            spacecraft_frame (SpacecraftFrame): The frame the spacecraft was at nearest to the specified time
-        """
-        t = Time(rel_time + self.data.get_item(self.data.items[0]).trigtime, format=self.time_format)
-        return self.spacecraft_frames.at(t)
 
     def get_timebin_offset(self, reference_frame, target_skypos):
         # TODO Calculate offset based on target sky pos, reference_frame, finding the frame in this instance's frames
@@ -143,16 +124,14 @@ class InstrumentData:
             tuple: Tuple with arrays for counts, background counts, background variance,
                    good fit status, response matrix, and sky mask matrix
         """
-        # Note: we cache return values within the class so that users can access the same values across
-        #       calculations for the likelihood, signal-to-noise ratio, phospherescence veto, etc.
+        self.response_matrix = self.response.load_response(tstart, tstop)
+        self.sky_mask_matrix = self.response.sky_mask() if sky_mask else None
+
         if reference is None:
-            rsp, self.frame = self.format_response(tstart, tstop, sky_mask=sky_mask)
             self.counts, self.background_counts, self.background_var, self.good = self.format_data(tstart, tstop)
         else:
-            rsp, self.frame = self.format_response_by_reference(tstart, tstop, *reference, sky_mask=sky_mask)
+            # TODO: rotate response_matrix to the reference frame
             self.counts, self.background_counts, self.background_var, self.good = self.format_data_by_reference(tstart, tstop, *reference)
-
-        self.response_matrix, self.sky_mask_matrix = rsp if sky_mask else (rsp, None)
 
         # remove masked channels when requested
         if channel_mask is not None and sum(channel_mask) < self.counts.shape[-1]:
@@ -161,40 +140,6 @@ class InstrumentData:
                    self.response_matrix[..., channel_mask], self.sky_mask_matrix
 
         return self.counts, self.background_counts, self.background_var, self.good, self.response_matrix, self.sky_mask_matrix
-
-    def format_response(self, tstart, tstop, sky_mask=False):
-        """Extracts the expected response matrix for this instrument, representing all detectors
-
-        Args:
-            tstart (float): Start of the time bin
-            tstop (float): End of the time bin
-            sky_mask (bool): A boolean representing whether or not to apply/extract a sky mask
-                             used to remove regions blocked by the Earth, Moon, etc.
-
-        Returns:
-            tuple: ((np.ndarray, np.ndarry), SpacecraftFrame) when mask = True, else (np.ndarray, SpacecraftFrame)
-        """
-        tcent = 0.5 * (tstart + tstop)
-        frame = self.get_spacecraft_frame(tcent)
-
-        return self.response.load_response(frame, sky_mask), frame
-
-    def format_response_by_reference(self, tstart, tstop, reference_frame, skygrid, sky_mask=False):
-        """Extracts the expected response matrix for this instrument, representing all detectors
-
-        Args:
-            tstart (float): Start of the time bin
-            tstop (float): End of the time bin
-            reference_frame (SpacecraftFrame): reference spacecraft frame
-            skygrid (Skygrid): The skygrid we are searching over, from the scanner
-            sky_mask (bool): A boolean representing whether or not to apply/extract a sky mask
-                             used to remove regions blocked by the Earth, Moon, etc.
-
-        Returns:
-            tuple: ((np.ndarray, np.ndarry), SpacecraftFrame) when mask = True, else (np.ndarray, SpacecraftFrame)
-        """
-        # need to retrieve reponse and rotate into reference frame
-        raise NotImplemented("Loading response for a sky position is not implemented yet.")
 
     def format_data(self, tstart, tstop):
         """Formats the instrument's counts, background rates, background variance, and response, including masking only
