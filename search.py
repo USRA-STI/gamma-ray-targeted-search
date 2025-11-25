@@ -67,6 +67,10 @@ class TargetedSearch():
         self.skygrid = skygrid
         self.instrument_data = {}
 
+        self.like = None
+        self.like_points = None
+        self.like_frame = None
+
     def add_instrument(self, name, data, fitters, response_generator, frames, fit_checker, time_format):
         """Create and add a new InstrumentData instance to scanner's instrument_data attribute
 
@@ -135,9 +139,6 @@ class TargetedSearch():
             tstart (float): Float representing the start of the timebin
             tstop (float): Float representing the end of the timebin
             sky_mask (bool, optional): Mask obstructed sky locations (Earth, Moon, etc) when True
-
-        Returns:
-            tuple: Tuple with the likelihood result, skygrid, and reference frame for the skygrid
         """
         # always start with the first instrument in the list
         instrument = self.search_configuration['instruments'][0]
@@ -192,10 +193,10 @@ class TargetedSearch():
         # TO DO: The Likelihood class currently flattens the response_matrix over
         #        spectral templates x sky position assuming that counts is a 1D vector.
         #        Need to account for 2D counts shape.
-        like = Likelihood(response_matrix.shape[0], self.skygrid.size)
-        like.calculate(counts, background_counts, background_var, good * response_matrix)
-
-        return like, self.skygrid._points[:, sky_mask_matrix], reference_frame
+        self.like = Likelihood(response_matrix.shape[0], self.skygrid.size)
+        self.like.calculate(counts, background_counts, background_var, good * response_matrix)
+        self.like_points = self.skygrid._points[:, sky_mask_matrix]
+        self.like_frame = reference_frame
 
     def run(self, timebins, time_ref=None, sky_mask=True):
         """Run the search for a given target time
@@ -213,18 +214,18 @@ class TargetedSearch():
 
         for i, (tstart, duration) in enumerate(timebins):
             # compute the likelihood for this timebin
-            like, points, reference_frame = self.calculate_likelihood(tstart, tstart + duration, sky_mask=sky_mask)
+            self.calculate_likelihood(tstart, tstart + duration, sky_mask=sky_mask)
 
             # best-fit location
-            az_max, zen_max = points[:, like.max_location]
-            coord_max = SkyCoord(az_max, 0.5 * np.pi - zen_max, frame=reference_frame, unit='rad')
+            az_max, zen_max = self.like_points[:, self.like.max_location]
 
-            # marginalized likelihood over sky prior instead of uniform prior
-            log_sky_prior = utils.sky_prior(points, reference_frame, None, None)
-            coinclr = like.coinclr(log_sky_prior, llratio=like.llr)
+            # required result fields
+            results.data[i] = (
+                tstart, duration, az_max, zen_max, self.like.max_template,
+                self.like.photon_fluence/duration, *self.like.chisq,
+                self.like.marginal_llr)
 
-            results.data[i] = (tstart, duration, coord_max.icrs.ra[0].rad, coord_max.icrs.dec[0].rad, az_max, zen_max,
-                               like.max_template, like.photon_fluence/duration, *like.chisq, like.marginal_llr, coinclr)
+            # TO DO: loop over optional fields
 
         return results
 

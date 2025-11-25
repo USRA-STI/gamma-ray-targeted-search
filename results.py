@@ -119,8 +119,8 @@ class Results:
     required_dtype = [
         ('tstart', 'f8'),
         ('duration', 'f8'),
-        ('ra', 'f8'),
-        ('dec', 'f8'),
+        #('ra', 'f8'),
+        #('dec', 'f8'),
         ('az', 'f8'),
         ('zen', 'f8'),
         ('template', 'i4'),
@@ -128,7 +128,7 @@ class Results:
         ('reduced_chisq', 'f8'),
         ('chiplusdof', 'f8'),
         ('loglr', 'f8'),
-        ('coinclr', 'f8'),
+        #('coinclr', 'f8'),
         #('in_gti', 'bool'), # optional
         #('atmoscat', 'bool'), #optional
         #('flags', 'i4'), # make i8 and optional
