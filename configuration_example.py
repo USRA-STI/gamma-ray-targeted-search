@@ -125,7 +125,7 @@ in_rock = []
 response = GBMResponse(phaiis.items, skygrid, 'templates/GBM', spacecraft_frames, ttes.get_item("n0").trigtime, templates=[0, 1, 2])
 
 search = TargetedSearch(search_config, skygrid)
-search.add_instrument('gbm', phaiis, backfitters, response, goodness_of_fit)
+search.add_instrument('gbm', phaiis, backfitters, goodness_of_fit, response)
 
 #counts, bkgd_counts, bkgd_var, good = search.instrument_data['gbm'].format_data(1.728, 2.240)
 

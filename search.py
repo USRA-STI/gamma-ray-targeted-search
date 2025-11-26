@@ -41,17 +41,17 @@ class TargetedSearch():
     """Class that can perform a single or multi-instrument search for GRBs across a specified skygrid
 
     Attributes:
-        search_configuration: SearchConfiguration object
+        config: SearchConfiguration object
             Instance of SearchConfiguration class with relevant settings and attributes necessary to conduct search
         skygrid: Skygrid object
             Instance of Skygrid class with expected sky positions and other relevant structures
         instrument_data: Dictionary
-            Dictionary containing InstrumentData objects, keyed by instrument name, that allow scanner to access
+            Dictionary containing InstrumentData objects, keyed by instrument name, that allow search to access
             counts, background, response, and other necessary data related to a particular instrument
 
     Public Methods:
         add_instrument:
-            Create and add a new InstrumentData instance to scanner's instrument_data attribute
+            Create and add a new InstrumentData instance to the instrument_data attribute
         get_timebins:
             Return a list with values for the start times and durations of each search bin
         stack_instrument_outputs:
@@ -59,11 +59,11 @@ class TargetedSearch():
         calculate_timebin_likelihood:
             Extract the result of a likelihood calculation on a specific timebin across all instruments in search
         run:
-            Performs a scan according to the parameters set in the search_configuration attribute and returns all
+            Performs a scan according to the parameters set in the config attribute and returns all
             relevant information necessary to construct a Result object
     """
-    def __init__(self, search_configuration, skygrid):
-        self.search_configuration = search_configuration
+    def __init__(self, config, skygrid):
+        self.config = config
         self.skygrid = skygrid
         self.instrument_data = {}
 
@@ -71,19 +71,17 @@ class TargetedSearch():
         self.like_points = None
         self.like_frame = None
 
-    def add_instrument(self, name, data, fitters, response_generator, fit_checker):
-        """Create and add a new InstrumentData instance to scanner's instrument_data attribute
+    def add_instrument(self, name, data, fitters, goodness_of_fit, response):
+        """Create and add a new InstrumentData instance to the instrument_data attribute
 
         Args:
             name (str): Instrument name
             data (DataCollection[TTE|Phaii]): Data Collection to extract counts and exposure for this instrument
-            fitters (DataCollection[BackgroundFitter]): Data Collection to extract background counts and variance
-            response_generator (BaseResponseGenerator): Subclass of BaseResponseGenerator that can represent this
-                instrument's expected response at a particular timebin
-            fit_checker (Callable[[ndarray, ndarray], ndarray]): TODO function that takes counts and background rates
-                as input and outputs a ndarray of booleans identifying goodness of fit
+            fitters (DataCollection[BackgroundFitter]): Data Collection with background fit
+            goodness_of_fit (DataCollection[FitStatus]): Data collection with the goodness-of-fit metric
+            response (BaseResponse): Instrument response object
         """
-        self.instrument_data[name] = InstrumentData(data, fitters, response_generator, fit_checker)
+        self.instrument_data[name] = InstrumentData(data, fitters, goodness_of_fit, response)
 
     def get_timebins(self, t0=None):
         """Calculate the time bins used in the search. These represent the different emission durations of the search
@@ -95,30 +93,23 @@ class TargetedSearch():
         Returns:
             timebins: list of bins with tuples representing the start times and durations of each search bin
         """
-        win_width = self.search_configuration['win_width']
-        min_dur = self.search_configuration['min_dur']
-        max_dur = self.search_configuration['max_dur']
-        min_step = self.search_configuration['min_step']
-        num_steps = self.search_configuration['num_steps']
-
-        search_range = (-win_width / 2.0, win_width / 2.0)
+        search_range = (-0.5 * self.config['win_width'], 0.5 * self.config['win_width'])
 
         # Durations to search in powers of two
-        log2maxdur = np.round(np.log2(max_dur))
-        log2mindur = np.round(np.log2(min_dur))
+        log2maxdur = np.round(np.log2(self.config['max_dur']))
+        log2mindur = np.round(np.log2(self.config['min_dur']))
         durations = 1.024 * 2. ** np.arange(log2mindur, log2maxdur + 1, 1)
 
         # Limits of the data interval using the reference instrument
-        reference_instrument = self.search_configuration['reference_instrument']
-        reference_data = self.instrument_data[reference_instrument].data
-        data_start = max([data.slice_time((search_range[0] - 0.5 * max_dur, 0)).time_range[0] for data in reference_data])
+        reference_data = self.instrument_data[self.config['reference_instrument']].data
+        data_start = max([data.slice_time((search_range[0] - 0.5 * self.config['max_dur'], 0)).time_range[0] for data in reference_data])
         data_end = min([data.slice_time((0, search_range[1])).time_range[1] for data in reference_data])
 
-        # The search bins before t0
-        timebins1 = [(t, dur) for dur in durations for t in np.arange(0, data_start, -max(min_step, dur / num_steps)) if t >= search_range[0] - dur / 2.0]
+        # The search bins at t0 and before
+        timebins1 = [(t, dur) for dur in durations for t in np.arange(0, data_start, -self.config.step_size(dur)) if t >= search_range[0] - dur / 2.0]
 
-        # The search bins after t0, inclusive
-        timebins2 = [(t, dur) for dur in durations for t in np.arange(max(min_step, dur / num_steps), data_end, max(min_step, dur / num_steps)) if t + dur / 2.0 <= search_range[-1]]
+        # The search bins after t0
+        timebins2 = [(t, dur) for dur in durations for t in np.arange(self.config.step_size(dur), data_end, self.config.step_size(dur)) if t + dur / 2.0 <= search_range[-1]]
 
         # Combine the search windows. Format: (tstart, duration)
         timebins = sorted(timebins1)
@@ -137,7 +128,7 @@ class TargetedSearch():
             sky_mask (bool, optional): Mask obstructed sky locations (Earth, Moon, etc) when True
         """
         # always start with the first instrument in the list
-        instrument = self.search_configuration['instruments'][0]
+        instrument = self.config['instruments'][0]
         instrument_data = self.instrument_data[instrument['name']]
 
         # gather counts, background, response, and sky mask matrix for first instrument
@@ -148,11 +139,11 @@ class TargetedSearch():
         reference_frame = instrument_data.response.frame
 
         # append remaining instruments
-        for i in range(1, len(self.search_configuration['instruments'])):
+        for i in range(1, len(self.config['instruments'])):
             # Throw error here because this code is untested. There are probably typos.
             raise NotImplemented("Searching multiple instruments is not implemented yet.")
 
-            instrument = self.search_configuration['instruments'][i]
+            instrument = self.config['instruments'][i]
             instrument_data = self.instrument_data[instrument['name']]
 
             # gather counts, background, response, and sky mask matrix for this instrument
@@ -236,7 +227,7 @@ class TargetedSearch():
             (list[tuple]): List of timebins with each tuple aligned to the reference instrument's binned data,
                 or the original input in the case that alignment was not needed or the reference data was unbinned
         """
-        reference_instrument = self.search_configuration['reference_instrument']
+        reference_instrument = self.config['reference_instrument']
         reference_data = self.instrument_data[reference_instrument].data
 
         for i, (start, dur) in enumerate(timebins):

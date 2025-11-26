@@ -57,14 +57,14 @@ class InstrumentData:
         format_data: Retrieve data counts, background counts, background variance, and goodness of fit for a time interval
         format_data_by_reference: Similar to format_data, but the time interval is calculated relative to another instrument
     """
-    def __init__(self, data, fitters, response, goodness_of_fit):
+    def __init__(self, data, fitters, goodness_of_fit, response):
         """ Class constructor
 
         Args:
             data (DataCollection[TTE|Phaii]): Data Collection to extract counts and exposure for this instrument
             fitters (DataCollection[BackgroundFitter]): Data Collection to extract background counts and variance
+            goodness_of_fit (DataCollection[FitStatus]): Data collection with the goodness-of-fit metric
             response (BaseResponse): Instrument response object
-            goodness_of_fit (FitStatus): Collection of background fit statuses for each detector
         """
         # Sanity checks
         for i, det in enumerate(data.items):

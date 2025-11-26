@@ -231,6 +231,7 @@ class SearchConfiguration(BaseConfiguration):
         validate: Validate the settings dictionary
         add_instrument: Add a new instrument and corresponding InstrumentConfiguration
         get_instrument: Get the instance of a specified instrument's InstrumentConfiguration
+        step_size: Return step size for a duration
 
     Class Methods:
         open: Create a SearchConfiguration object given a valid YAML file
@@ -327,7 +328,18 @@ class SearchConfiguration(BaseConfiguration):
             if not isinstance(instrument_config, InstrumentConfiguration):
                 raise ValueError(f"Instrument configuration must be of type InstrumentConfiguration")
 
+    def step_size(self, duration):
+        """Time step for a given duration
+
+        Args:
+            duration (float): Search bin duration in seconds
+
+        Returns:
+            (float): Step size in seconds
+        """
+        return max(self['min_step'], duration / self['num_steps'])
+
     @property
     def time_resolution(self):
         """(str): Name of the reference instrument (always the first item in the instruments list)"""
-        return max(self['min_step'], self['min_dur'] / self['num_steps'])
+        return self.step_size(self['min_dur'])
