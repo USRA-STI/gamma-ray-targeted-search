@@ -137,6 +137,7 @@ class InstrumentConfiguration(BaseConfiguration):
         write: Write the configuration to a yaml file
         validate: Validate the settings dictionary
         add_detector: Add a new detector and corresponding configuration
+        select_channels: Select detector channels from a flattened array
 
     Class Methods:
         open: Create an InstrumentConfiguration object given a valid YAML file
@@ -169,6 +170,24 @@ class InstrumentConfiguration(BaseConfiguration):
         self['detectors'][name] = config
         self.validate()
 
+    def select_channels(self, channels):
+        """Select detector channels from a flattened array
+
+        Args:
+            channels (dict): dictionary with {det: [channels]} format
+
+        Returns:
+            np.ndarray: Array with channel indices
+        """
+        i = 0
+        selection = []
+        for name, config in self['detectors'].items():
+            if name in channels:
+                 selection.append(np.array(channels[name]) + i)
+            i += len(config['channel_edges']) - 1
+
+        return np.array(selection)
+
     @property
     def detector_names(self):
         """(list): List of detector names"""
@@ -179,9 +198,9 @@ class InstrumentConfiguration(BaseConfiguration):
         """(numpy.ndarray): Construct the mask of allowed detector channels for a search"""
         if hasattr(self, "cache") == False:
             mask = []
-            for det_config in self['detectors'].values():
-                mask.append([channel in det_config['search_channels']
-                             for channel in range(len(det_config['channel_edges']) - 1)])
+            for config in self['detectors'].values():
+                mask.append([channel in config['search_channels']
+                             for channel in range(len(config['channel_edges']) - 1)])
             self.cache = np.ravel(mask)
         return self.cache
 

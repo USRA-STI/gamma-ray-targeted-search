@@ -126,7 +126,7 @@ response = GBMResponse(phaiis.items, skygrid, 'templates/GBM', spacecraft_frames
 search = TargetedSearch(search_config, skygrid)
 search.add_instrument('gbm', phaiis, backfitters, goodness_of_fit, response)
 
-snr_channels = [(8 * i + 3, 8 * i + 4) for i in range(12)]
+snr_channels = gbm_config.select_channels({det.name: [3, 4] for det in GbmDetectors.nai()})
 search.add_calculation([("snr1", "<f8"), ("snr0", "<f8")], calculate_top_snr, instrument="gbm", channels=snr_channels, n=2)
 
 # run the search
