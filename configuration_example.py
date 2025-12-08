@@ -32,7 +32,7 @@ from rich.progress import track
 from configuration import InstrumentConfiguration, SearchConfiguration
 from response import GBMResponse
 from search import TargetedSearch
-from results import Results
+from results import Results, calculate_top_snr
 from utils import SkyGrid
 from data import FitStatus
 
@@ -121,16 +121,18 @@ poshist = GbmPosHist.open("data/gbm/524666469.429/glg_poshist_all_170817_v01.fit
 
 spacecraft_frames = poshist.get_spacecraft_frame()
 
-in_rock = []
 response = GBMResponse(phaiis.items, skygrid, 'templates/GBM', spacecraft_frames, ttes.get_item("n0").trigtime, templates=[0, 1, 2])
 
 search = TargetedSearch(search_config, skygrid)
 search.add_instrument('gbm', phaiis, backfitters, goodness_of_fit, response)
 
-#counts, bkgd_counts, bkgd_var, good = search.instrument_data['gbm'].format_data(1.728, 2.240)
+snr_channels = [(8 * i + 3, 8 * i + 4) for i in range(12)]
+search.add_calculation([("snr1", "<f8"), ("snr0", "<f8")], calculate_top_snr, instrument="gbm", channels=snr_channels, n=2)
 
-timebins = search.get_timebins(t0)
+# run the search
+timebins = search.get_timebins()
 results = search.run(timebins)
+print(results.data.dtype)
 print(results[0])
 print(results['duration'])
 print(results.search_window)

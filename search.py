@@ -54,13 +54,12 @@ class TargetedSearch():
             Create and add a new InstrumentData instance to the instrument_data attribute
         get_timebins:
             Return a list with values for the start times and durations of each search bin
-        stack_instrument_outputs:
-            In progress. Allows multi-instrument searches to structure the inputs for Likelihood calculation
-        calculate_timebin_likelihood:
-            Extract the result of a likelihood calculation on a specific timebin across all instruments in search
+        calculate_likelihood:
+            Perform likelihood calculation on a specific timebin across all instruments in the search
         run:
-            Performs a scan according to the parameters set in the config attribute and returns all
-            relevant information necessary to construct a Result object
+            Run the search over a set of time bins
+        add_calculation:
+            Add a calculation to perform during the search
     """
     def __init__(self, config, skygrid):
         self.config = config
@@ -70,6 +69,11 @@ class TargetedSearch():
         self.like = None
         self.like_points = None
         self.like_frame = None
+
+        self.calculations = []
+
+    def add_calculation(self, dtype, method, *args, **kwargs):
+        self.calculations.append({"method": method, "args": args, "kwargs": kwargs, "results": np.empty(0, dtype)})
 
     def add_instrument(self, name, data, fitters, goodness_of_fit, response):
         """Create and add a new InstrumentData instance to the instrument_data attribute
@@ -83,12 +87,12 @@ class TargetedSearch():
         """
         self.instrument_data[name] = InstrumentData(data, fitters, goodness_of_fit, response)
 
-    def get_timebins(self, t0=None):
+    def get_timebins(self, t0=0):
         """Calculate the time bins used in the search. These represent the different emission durations of the search
         shifted across the full search range using a given step size.
 
         Args:
-            t0: Currently unused, could possibly be removed
+            t0: Reference time for the search window
 
         Returns:
             timebins: list of bins with tuples representing the start times and durations of each search bin
@@ -106,10 +110,10 @@ class TargetedSearch():
         data_end = min([data.slice_time((0, search_range[1])).time_range[1] for data in reference_data])
 
         # The search bins at t0 and before
-        timebins1 = [(t, dur) for dur in durations for t in np.arange(0, data_start, -self.config.step_size(dur)) if t >= search_range[0] - dur / 2.0]
+        timebins1 = [(t, dur) for dur in durations for t in np.arange(t0, data_start, -self.config.step_size(dur)) if t >= search_range[0] - dur / 2.0]
 
         # The search bins after t0
-        timebins2 = [(t, dur) for dur in durations for t in np.arange(self.config.step_size(dur), data_end, self.config.step_size(dur)) if t + dur / 2.0 <= search_range[-1]]
+        timebins2 = [(t, dur) for dur in durations for t in np.arange(t0 + self.config.step_size(dur), data_end, self.config.step_size(dur)) if t + dur / 2.0 <= search_range[-1]]
 
         # Combine the search windows. Format: (tstart, duration)
         timebins = sorted(timebins1)
@@ -120,7 +124,8 @@ class TargetedSearch():
         return timebins
 
     def calculate_likelihood(self, tstart, tstop, sky_mask=True):
-        """Calculate the likelihood for a given time interval defined by [tstart, tstop]
+        """Calculate the likelihood for a given time interval defined by [tstart, tstop].
+        Stores output in the like, like_points, and like_frame class attributes.
 
         Args:
             tstart (float): Float representing the start of the timebin
@@ -182,6 +187,7 @@ class TargetedSearch():
         #        Need to account for 2D counts shape.
         self.like = Likelihood(response_matrix.shape[0], self.skygrid.size)
         self.like.calculate(counts, background_counts, background_var, good * response_matrix)
+
         self.like_points = self.skygrid._points[:, sky_mask_matrix]
         self.like_frame = reference_frame
 
@@ -198,6 +204,7 @@ class TargetedSearch():
             (list[tuple]): A list of tuples from which a Result object can be generated for each timebin
         """
         results = Results.create(len(timebins), time_ref=time_ref)
+        [calc['results'].resize(len(timebins)) for calc in self.calculations]
 
         for i, (tstart, duration) in enumerate(timebins):
             # compute the likelihood for this timebin
@@ -212,7 +219,12 @@ class TargetedSearch():
                 self.like.photon_fluence/duration, *self.like.chisq,
                 self.like.marginal_llr)
 
-            # TO DO: loop over optional fields
+            # user calculated fields
+            for calc in self.calculations:
+                calc['results'][i] = calc['method'](self, results.data[i], *calc['args'], **calc['kwargs'])
+
+        if len(self.calculations):
+            results.append_arrays([calc['results'] for calc in self.calculations])
 
         return results
 

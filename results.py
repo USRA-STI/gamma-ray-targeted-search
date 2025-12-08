@@ -41,6 +41,25 @@ import numpy.lib.recfunctions
 from scipy.integrate import trapezoid
 from scipy.optimize import fmin
 
+def calculate_top_snr(search, result, instrument, channels, n=1):
+    """Calculate top `n` signal-to-noise ratios (SNR) for each result.
+
+    Args:
+        search (TargetedSearch): The search class with instrument data
+        result (np.ndarry): The current search result
+        instrument (str): The instrument name to use
+        n (int): The number of SNR values to return
+        channels (list): The channels to include given as [(det0_min, det0_max), (det1_min, ... ]
+    """
+    data = search.instrument_data[instrument]
+
+    counts = data.counts[channels].sum(axis=-1)
+    background = data.background_counts[channels].sum(axis=-1)
+    snr = (counts - background) / np.sqrt(background)
+
+    # Return the top "n" SNR measurements
+    return tuple(np.sort(snr)[-n:])
+
 def remove_pe(results, cr1=5, cr2=1, cr2thr=8):
     """
     Apply phosphorescence event (pe) veto and return a new Results object with the veto applied.
@@ -197,6 +216,11 @@ class Results:
 
     def append_fields(self, names, data):
         self.data = numpy.lib.recfunctions.append_fields(self.data, names, data)
+
+    def append_arrays(self, arrays):
+        if not isinstance(arrays, list):
+            arrays = [arrays]
+        self.data = numpy.lib.recfunctions.merge_arrays([self.data] + arrays, flatten=True)
 
 
 class FalseAlarmRate():
