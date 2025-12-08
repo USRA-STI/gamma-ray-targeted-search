@@ -42,9 +42,9 @@ class BaseConfiguration(yaml.YAMLObject):
     Attributes:
         settings (dict): dictionary with the configuration settings
         yaml_tag (str): tag used to serialize the class within YAML files
-        cache (object, optional): cache of values excluded from write.
-                                  Used to reduce overhead when derived
-                                  methods are frequently called.
+        cache (object, optional): cache of runtime values excluded from write.
+                                  Used to reduce overhead for frequently
+                                  calling derived methods.
         _derived_keys (list): list of derived keys to be constructed
                               from base settings.
 
@@ -98,13 +98,13 @@ class BaseConfiguration(yaml.YAMLObject):
 
     @classmethod
     def open(cls, path):
-        """Create a new instance of InstrumentConfiguration given a input file
+        """Create a new instance of InstrumentConfiguration given an input file
 
         Args:
             path (str): Path to configuration file
 
         Returns:
-            configured_instrument (InstrumentConfiguration): Instance of self configured as desired
+            configured_instrument (InstrumentConfiguration): Instance of InstrumentConfiguration
         """
         if not os.path.isfile(path):
             raise FileNotFoundError(f"No such file: '{path}'")
@@ -156,17 +156,17 @@ class InstrumentConfiguration(BaseConfiguration):
         """
         super().__init__(name=name, detectors=detectors)
 
-    def add_detector(self, detector_name, detector_config):
+    def add_detector(self, name, config):
         """Add a new detector configuration
 
         Args:
-            detector_name (str): Detector name
-            detector_config (dict): Dictionary representing the configuration for this detector.
+            name (str): Detector name
+            config (dict): Dictionary representing the configuration for this detector.
                 Must contain keys for channel_edges and search_channels.
         """
-        if detector_name in self['detectors']:
-            warnings.warn(f"Replacing detector {detector_name}")
-        self['detectors'][detector_name] = detector_config
+        if name in self['detectors']:
+            warnings.warn(f"Replacing detector {name}")
+        self['detectors'][name] = config
         self.validate()
 
     @property
@@ -188,12 +188,12 @@ class InstrumentConfiguration(BaseConfiguration):
     @property
     def search_channels(self):
         """(dict): Dictionary with search_channels keyed according to detector names"""
-        return {det: det_config['search_channels'] for det, det_config in self['detectors'].items()}
+        return {det: config['search_channels'] for det, config in self['detectors'].items()}
 
     @property
     def channel_edges(self):
         """(dict): Dictionary with channel_edges keyed according to detector names"""
-        return {det: det_config['channel_edges'] for det, det_config in self['detectors'].items()}
+        return {det: config['channel_edges'] for det, config in self['detectors'].items()}
 
     def validate(self):
         """Ensure configuration meets expected structure"""
@@ -206,12 +206,12 @@ class InstrumentConfiguration(BaseConfiguration):
         if not isinstance(self['name'], str):
             raise ValueError(f"Instrument name is not a string. Please check your inputs.")
 
-        for detector, detector_config in self['detectors'].items():
+        for detector, config in self['detectors'].items():
             for key in ['channel_edges', 'search_channels']:
-                if key not in detector_config:
+                if key not in config:
                     raise ValueError(f"Configuration['detectors']['{detector}'] missing '{key}'")
 
-                value = detector_config[key]
+                value = config[key]
                 if not isinstance(value, list) or not isinstance(value[0], int):
                     raise ValueError(f"Detector {detector} configuration must contain a key {key} with a value of type list(int)")
 
@@ -260,19 +260,19 @@ class SearchConfiguration(BaseConfiguration):
                          max_dur=max_dur, min_step=min_step, num_steps=num_steps,
                          skygrid_resolution=skygrid_resolution, instruments=instruments, **kwargs)
 
-    def add_instrument(self, instrument_config):
+    def add_instrument(self, config):
         """Adds an instrument configuration to this search configuration
 
         Args:
-            instrument_config (InstrumentConfiguration): An instrument configuration
+            config (InstrumentConfiguration): An instrument configuration
         """
-        name = instrument_config['name']
+        name = config['name']
         if name in self.instrument_names:
             warnings.warn(f"Replacing instrument {name}")
             i = self.instrument_names.index(name)
-            self['instruments'][i] = instrument_config
+            self['instruments'][i] = config
         else:
-            self['instruments'].append(instrument_config)
+            self['instruments'].append(config)
         self.validate()
 
     def get_instrument(self, name):
@@ -291,6 +291,17 @@ class SearchConfiguration(BaseConfiguration):
             print(f"{name} does not exist in instruments list")
             exit(0)
 
+    def step_size(self, duration):
+        """Time step for a given duration
+
+        Args:
+            duration (float): Search bin duration in seconds
+
+        Returns:
+            (float): Step size in seconds
+        """
+        return max(self['min_step'], duration / self['num_steps'])
+
     @property
     def instrument_names(self):
         """(list): List of instrument names"""
@@ -305,6 +316,11 @@ class SearchConfiguration(BaseConfiguration):
     def time_range(self):
         """(numpy.ndarray): Search time range (tstart, tstop)"""
         return np.array([-0.5 * self['win_width'], 0.5 * self['win_width']])
+
+    @property
+    def time_resolution(self):
+        """(str): Name of the reference instrument (always the first item in the instruments list)"""
+        return self.step_size(self['min_dur'])
 
     def validate(self):
         """Ensure configuration meets expected structure"""
@@ -327,19 +343,3 @@ class SearchConfiguration(BaseConfiguration):
         for instrument_config in self['instruments']:
             if not isinstance(instrument_config, InstrumentConfiguration):
                 raise ValueError(f"Instrument configuration must be of type InstrumentConfiguration")
-
-    def step_size(self, duration):
-        """Time step for a given duration
-
-        Args:
-            duration (float): Search bin duration in seconds
-
-        Returns:
-            (float): Step size in seconds
-        """
-        return max(self['min_step'], duration / self['num_steps'])
-
-    @property
-    def time_resolution(self):
-        """(str): Name of the reference instrument (always the first item in the instruments list)"""
-        return self.step_size(self['min_dur'])
