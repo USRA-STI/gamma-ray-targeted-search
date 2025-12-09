@@ -143,7 +143,7 @@ class Results:
         return self.data[key]
 
     def save(self, directory, filename=None):
-        np.savez(os.path.join(directory, filename), time_ref=time_ref,
+        np.savez(os.path.join(directory, filename), time_ref=self.time_ref,
                  template_names=self.template_names, **{key: self.data[key] for key in self.data.dtype.names}) 
 
     @classmethod
