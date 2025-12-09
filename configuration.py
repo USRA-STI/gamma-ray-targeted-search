@@ -29,6 +29,7 @@ import yaml
 import numpy as np
 import warnings
 
+
 class BaseConfiguration(yaml.YAMLObject):
     """A base class for configuration objects.
 
