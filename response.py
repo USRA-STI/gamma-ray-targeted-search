@@ -43,6 +43,7 @@ class BaseResponse(ABC):
 
     Public Methods:
         load_response: Abstract method to compute the response matrix for period of time
+        sky_mask: Return sky mask with True for visible skygrid locations, False otherwise
     """
     def __init__(self, detectors, skygrid):
         self.detectors = detectors
@@ -55,20 +56,36 @@ class BaseResponse(ABC):
     def sky_mask(self):
         return None
 
+
 class GBMResponse(BaseResponse):
     """Implementation of the GBM instrument response for the TargetedSearch
 
     Attributes:
+        t0 (float): Reference time used by the TargetedSearch class
         detectors (list[str]): List of detector names
         skygrid (Skygrid): Instance of Skygrid class with expected sky positions and other relevant structures
+        templates (list): List of spectral template indices to use
         templates_directory (str): String representing the location where response templates are stored
-        delta (float): Angular displacement for rebuilding atmospheric scattering response
+        delta (float): Angular displacement in radians for rebuilding atmospheric scattering response
+        zen_margin (float): Zenith margin in radians for choosing atmospheric scattering response
+        rocking_zen (float): Zenith angle in radians for the atmospheric scattering response
+        det_index (dict): Mapping between detector name and template file index
+        spacecraft_frames (SpacecraftFrame): Object with spacecraft orientation over time
+        available_azimuths (list): List of available atmospheric response azimuths
+        direct (dict): Dictionary with direct response matrices for each detector
+        frame (SpacecraftFrame): Frame with spacecraft orientation for current response period
+        geo_zenith (float): Zenith of the Earth center in radians for current response period
+        geo_azimuth (float): Azimuth of the Earth center in radians for current response period
+        geo_radius (float): Radius of the Earth in radians for current response period
+        cache (dict): Cached response
 
     Public Methods:
         load_response: Method to compute the response matrix for a given time bin
         load_direct_response: Method to load the direct response matrix for a given time bin
         load_atmospheric_response: Method to load the atmospheric response matrix for a given detector and azimuth
         get_available_azimuths: Method to check which azimuths are available in the templates for a given detector
+        get_detector_type: Convert detector name to nai or bgo string
+        sky_mask: Return sky mask with True for visible skygrid locations, False otherwise
     """
     zen_margin = np.radians(5.0)
     rocking_zen = np.radians(130.0)
@@ -76,14 +93,14 @@ class GBMResponse(BaseResponse):
 
     def __init__(self, detectors, skygrid, templates_directory, spacecraft_frames, 
                  t0, delta: float = np.radians(0.1), templates: list = None):
-        """ Class constructor
+        """Class constructor
 
         Args:
             detectors (list[str]): List of detector names
             skygrid (Skygrid): The skygrid this response should be generated over
             templates_directory (str): String representing the path where the templates for the GBM response are stored
             spacecraft_frames (SpacecraftFrame): Spacecraft position history object
-            t0 (float): Reference time
+            t0 (float): Reference time of the search
             delta (float): Angular displacement for rebuilding atmospheric scattering response
             templates (list): list of template IDs to use
         """
@@ -107,16 +124,15 @@ class GBMResponse(BaseResponse):
 
         self.cache = None
 
-    def load_response(self, tstart, tstop, sky_mask=False):
+    def load_response(self, tstart, tstop):
         """Generates the response matrix for a given spacecraft frame
 
         Args:
             tstart (float): Start of the response period
             tstop (float): End of the response period
-            sky_mask (bool): return earth mask with response matrix
 
         Returns:
-            np.ndarray: response matrix
+            (np.ndarray): Response matrix
         """
         # constant response over the full period (i.e. short burst approximation)
         t = Time(0.5 * (tstart + tstop) + self.t0, format="fermi") 
@@ -146,6 +162,7 @@ class GBMResponse(BaseResponse):
         return response
 
     def sky_mask(self):
+        """(np.ndarray): Generates sky mask with visible locations set to True, Earth occulted set to False."""
         if self.geo_azimuth is None:
             raise ValueError("Run load_response() before requesting sky mask")
         return create_earth_mask(self.skygrid._points, self.geo_azimuth, self.geo_zenith, self.geo_radius)
@@ -167,8 +184,8 @@ class GBMResponse(BaseResponse):
 
         Args:
             detector (str): The name of the detector
-            geo_az (float): Azimuth
-            geo_zen (float): Zenith
+            geo_az (float): Azimuth of the Earth center in radians
+            geo_zen (float): Zenith of the Earth center in radians
 
         Returns:
             (ndarray): The atmospheric response matrix/array for one detector
