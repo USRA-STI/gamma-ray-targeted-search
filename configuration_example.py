@@ -32,7 +32,7 @@ from rich.progress import track
 from configuration import InstrumentConfiguration, SearchConfiguration
 from response import GBMResponse
 from search import TargetedSearch
-from results import Results, calculate_top_snr
+from results import Results, calculate_top_snr, calculate_pe_variables
 from utils import SkyGrid
 from data import FitStatus
 
@@ -126,8 +126,14 @@ response = GBMResponse(phaiis.items, skygrid, 'templates/GBM', spacecraft_frames
 search = TargetedSearch(search_config, skygrid)
 search.add_instrument('gbm', phaiis, backfitters, goodness_of_fit, response)
 
+# top 2 detectors with highest signal-to-noise ratios
 snr_channels = gbm_config.select_channels({det.name: [3, 4] for det in GbmDetectors.nai()})
 search.add_calculation([("snr1", "<f8"), ("snr0", "<f8")], calculate_top_snr, instrument="gbm", channels=snr_channels, n=2)
+
+# phosphorescence veto variables
+pe_channels = gbm_config.select_channels({det.name: [0, 1] for det in GbmDetectors.nai()})
+search.add_calculation([("pe0", "<f8"), ("pe1", "<f8"), ("pe2", "<f8")], calculate_pe_variables, instrument="gbm", channels=pe_channels)
+
 
 # run the search
 timebins = search.get_timebins()

@@ -60,6 +60,38 @@ def calculate_top_snr(search, result, instrument, channels, n=1):
     # Return the top "n" SNR measurements
     return tuple(np.sort(snr)[-n:])
 
+def calculate_pe_variables(search, result, instrument, channels):
+    """Calculate variables used for a phosphorescence event veto.
+    These typically involve a comparison between signal-to-noise
+    ratios in the lowest two energy channels.
+
+    Args:
+        search (TargetedSearch): The search class with instrument data
+        result (np.ndarry): The current search result
+        instrument (str): The instrument name to use
+        channels (list): The channels to include given as [(det0_min, det0_max), (det1_min, ... ]
+    """
+    data = search.instrument_data[instrument]
+
+    counts = data.counts[channels]
+    background = data.background_counts[channels]
+    var = data.background_var[channels]
+    snr = (counts - background) / np.sqrt(background + var)
+
+    (i, j) = np.argsort(snr[:,0])[-2:]
+
+    # NOTE: phosphorescence events should
+    #
+    #  (1) be isolated to a single detector
+    #  (2) predominantly appear in the lowest energy channel
+    #
+    # Therefore, the brightest brightest detector in the lowest energy
+    # channel, indexed by j, should be significantly brighter than the
+    # next brightest detector, indexed by i. We also return snr from
+    # the next heighest energy channel in detector j since it should be
+    # much less than snr[j, 0] for real phosphorescence events.
+    return (snr[j, 0], snr[i, 0], snr[j, 1])
+
 def remove_pe(results, cr1=5, cr2=1, cr2thr=8):
     """
     Apply phosphorescence event (pe) veto and return a new Results object with the veto applied.
