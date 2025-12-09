@@ -34,7 +34,6 @@
 #
 import numpy as np
 import healpy as hp
-import sys
 import os
 import numpy.lib.recfunctions
 
@@ -50,6 +49,9 @@ def calculate_top_snr(search, result, instrument, channels, n=1):
         instrument (str): The instrument name to use
         n (int): The number of SNR values to return
         channels (list): The channels to include given as [(det0_min, det0_max), (det1_min, ... ]
+
+    Returns:
+        (tuple): Top "n" SNR measurements
     """
     data = search.instrument_data[instrument]
 
@@ -70,6 +72,9 @@ def calculate_pe_variables(search, result, instrument, channels):
         result (np.ndarry): The current search result
         instrument (str): The instrument name to use
         channels (list): The channels to include given as [(det0_min, det0_max), (det1_min, ... ]
+
+    Returns:
+        (tuple): Top 2 SNR (i, j) in lowest energy channel, SNR[j] in next highest channel
     """
     data = search.instrument_data[instrument]
 
@@ -92,86 +97,11 @@ def calculate_pe_variables(search, result, instrument, channels):
     # much less than snr[j, 0] for real phosphorescence events.
     return (snr[j, 0], snr[i, 0], snr[j, 1])
 
-def remove_pe(results, cr1=5, cr2=1, cr2thr=8):
-    """
-    Apply phosphorescence event (pe) veto and return a new Results object with the veto applied.
-    
-    Parameters:
-    results (Results): The Results object to filter.
-    cr1 (float): The threshold for pe_0/pe_1 ratio.
-    cr2 (float): The threshold for pe_0/pe_2 ratio or pe_0 itself.
-    cr2thr (float): The maximum value of pe_0 for vetoing.
-    
-    Returns:
-    Results: A new Results object with the veto applied.
-    """
-    if results.size == 0:
-        return results
-
-    icr1 = results['pe_0'] / np.maximum(0.1, results['pe_1']) < cr1
-    icr2 = (results['pe_0'] / np.maximum(0.1, results['pe_2']) < cr2) | \
-           (results['pe_0'] < cr2thr)
-
-    # Create a new Results object with filtered data
-    filtered_data = results._data[(icr1 & icr2)]
-    return Results.create(filtered_data, time_ref=results._timeref, templates=results._template_names)
-
-
-def remove_dur_spec(results, dur, spec):
-    if results.size > 0:
-        mask = (results['durations'] == dur) & (results['templates'] == spec)
-        results._data = results._data[~mask]
-    return results
-
-def sky_cut(results, sky_diff=2):
-    if results.size == 0:
-        return results
-    isky = (results['coinclr'] - results['loglr']) > sky_diff
-    obj = Results.create(results[isky], time_ref=results.t0,
-                         templates=results.template_names)
-    return obj
-
-def downselect(results, overlap_factor=0.2, threshold=None, combine_spec=True, 
-               fixedwin=0, no_empty=False):
-    if results.size == 0:
-        return results
-    
-    if threshold:
-        mask = (results['loglr'] >= threshold)
-        if (mask.sum() == 0) and no_empty:
-            mask = (results['loglr'] == results['loglr'].max())
-        data = results._data[mask]
-    else:
-        data = results._data        
-    
-    unique_events = []
-    sorted_events = data[(-data['loglr']).argsort()]
-    
-    for e1 in sorted_events:
-        keep = True
-        for e2 in unique_events:
-            toverlap = min(e1['time'] + e1['duration'] / 2.0, e2['time'] + e2['duration'] / 2.0) \
-                       - max(e1['time'] - e1['duration'] / 2.0, e2['time'] - e2['duration'] / 2.0) + fixedwin
-            
-            if (combine_spec or (e2['template'] == e1['template'])) and (toverlap > 0):
-                amplitude = e1['snr_0'] / np.sqrt(e1['duration'])
-                snr_expected = amplitude * toverlap / np.sqrt(e2['duration'])
-                if e2['snr_0'] * overlap_factor < snr_expected:
-                    keep = False
-                    break
-        if keep:
-            unique_events.append(e1)
-    
-    data = np.array(unique_events, dtype=results.dtype)
-    obj = Results.create(data, time_ref=results._timeref, templates=results._template_names)
-    return obj
 
 class Results:
     required_dtype = [
         ('tstart', 'f8'),
         ('duration', 'f8'),
-        #('ra', 'f8'),
-        #('dec', 'f8'),
         ('az', 'f8'),
         ('zen', 'f8'),
         ('template', 'i4'),
@@ -196,7 +126,7 @@ class Results:
     def __init__(self):
         """Class constructor"""
         self.data = np.empty(0, dtype=self.required_dtype)
-        self.t0 = 0.0
+        self.time_ref = 0.0
         self.template_names = np.array([])
 
     @property
@@ -213,17 +143,17 @@ class Results:
         return self.data[key]
 
     def save(self, directory, filename=None):
-        np.savez(os.path.join(directory, filename),
+        np.savez(os.path.join(directory, filename), time_ref=time_ref,
                  template_names=self.template_names, **{key: self.data[key] for key in self.data.dtype.names}) 
 
     @classmethod
-    def open(cls, filename, time_ref=0.0):
+    def open(cls, filename):
         file = np.load(filename)
 
-        names = [name for name in file.keys() if name not in ['template_names']]
+        names = [name for name in file.keys() if name not in ['time_ref', 'template_names']]
         n = len(file[names[0]])
 
-        obj = cls.create(n,  time_ref=time_ref, template_names=file["template_names"])
+        obj = cls.create(n,  time_ref=file['time_ref'], template_names=file["template_names"])
 
         # fill required fields
         for name, t in obj.required_dtype:
@@ -242,7 +172,7 @@ class Results:
     def create(cls, size, time_ref=0.0, template_names=None):
         obj = cls()
         obj.data = np.empty(size, dtype=obj.required_dtype)
-        obj.t0 = time_ref
+        obj.time_ref = time_ref
         obj.template_names = np.array([]) if template_names is None else np.array(template_names)
         return obj
 
@@ -255,6 +185,7 @@ class Results:
         self.data = numpy.lib.recfunctions.merge_arrays([self.data] + arrays, flatten=True)
 
 
+# TODO: Review FalseAlarmRate to check for API changes
 class FalseAlarmRate():
     """Class for False Alarm Rate distributions
     
@@ -368,7 +299,7 @@ class FalseAlarmRate():
         obj._livetime = livetime
         return obj
 
-
+# TODO: Move to GBMResponse since these are the spectral templates used by GBM
 def soft():
     """ Soft Spectral Template describing lower 1/3rd of GBM GRBs
 
@@ -435,6 +366,7 @@ def comp(params, energies):
            np.exp(-energies*(2.0+params['index'])/params['epeak'])
 
 
+# TODO: Review UpperLimits to check for API changes
 class UpperLimits():
     """Class for photon flux/energy flux upper limits
     
