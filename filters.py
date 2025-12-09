@@ -53,9 +53,7 @@ def remove_pe(results, cr1=5, cr2=1, cr2thr=8):
     icr2 = (results['pe_0'] / np.maximum(0.1, results['pe_2']) < cr2) | \
            (results['pe_0'] < cr2thr)
 
-    filtered_data = results._data[(icr1 & icr2)]
-
-    return Results.create(filtered_data, time_ref=results.time_ref, template_names=results.template_names)
+    return Results.create(results.data[(icr1 & icr2)], time_ref=results.time_ref, template_names=results.template_names)
 
 def remove_dur_spec(results, dur, spec):
     """Remove results with matching duration and spectral template.
@@ -72,20 +70,52 @@ def remove_dur_spec(results, dur, spec):
         return results
 
     mask = (results['durations'] == dur) & (results['templates'] == spec)
-    filtered_data = results._data[~mask]
 
-    return Results.create(filtered_data, time_ref=results.time_ref, template_names=results.template_names)
+    return Results.create(results.data[~mask], time_ref=results.time_ref, template_names=results.template_names)
 
-def sky_cut(results, sky_diff=2):
+def sky_cut(results, threshold=2):
+    """Select results where coinclr - loglr is larger than threshold.
+
+    Args:
+        results (Results): The Results object to filter.
+        threshold (float): The threshold applied to coinclr - loglr for candidate selection
+
+    Returns:
+        (Results): A new Results object without the duration + spectral template.
+    """
     if results.size == 0:
         return results
 
-    isky = (results['coinclr'] - results['loglr']) > sky_diff
+    mask = (results['coinclr'] - results['loglr']) > threshold
 
-    return Results.create(results[isky], time_ref=results.time_ref, templates_names=results.template_names)
+    return Results.create(results.data[mask], time_ref=results.time_ref, templates_names=results.template_names)
 
 def downselect(results, overlap_factor=0.2, threshold=None, combine_spec=True, 
                fixedwin=0, no_empty=False):
+    """Downselect results by:
+
+    1. Removing candidates with loglr < threshold
+    2. Removing candidates with temporal overlap based on whether the
+       signal-to-noise ratio (SNR) for one candidate can explain the
+       SNR of an overlapping candidate.
+
+
+    Args:
+        results (Results): The Results object to filter.
+        overlap_factor (float): Reject the candidate if its SNR is less than
+                                overlap_factor * SNR expected from an overlapping
+                                candidate with a higher SNR.
+        threshold (float): Reject the candidate if loglr < threshold
+        combine_spec (bool): Check overlap for all candidates when True, otherwise
+                             check overlap for candidates with the same spectrum
+        fixedwin (float): When >0 Use a fixed length coincidence window to
+                          test for temporal overlap instead of candidate duration
+                          Note: this implementation is currently bugged - it always adds an overlap
+        no_empty (bool): Return at least one result when True, regardless of threshold
+
+    Returns:
+        (Results): A new Results object without the duration + spectral template.
+    """
     if results.size == 0:
         return results
     
@@ -93,9 +123,9 @@ def downselect(results, overlap_factor=0.2, threshold=None, combine_spec=True,
         mask = (results['loglr'] >= threshold)
         if (mask.sum() == 0) and no_empty:
             mask = (results['loglr'] == results['loglr'].max())
-        data = results._data[mask]
+        data = results.data[mask]
     else:
-        data = results._data        
+        data = results.data
     
     unique_events = []
     sorted_events = data[(-data['loglr']).argsort()]
