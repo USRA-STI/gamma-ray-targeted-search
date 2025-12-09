@@ -41,25 +41,32 @@ class TargetedSearch():
     """Class that can perform a single or multi-instrument search for GRBs across a specified skygrid
 
     Attributes:
-        config: SearchConfiguration object
+        config (SearchConfiguration):
             Instance of SearchConfiguration class with relevant settings and attributes necessary to conduct search
-        skygrid: Skygrid object
+        skygrid (Skygrid):
             Instance of Skygrid class with expected sky positions and other relevant structures
-        instrument_data: Dictionary
+        instrument_data (dict):
             Dictionary containing InstrumentData objects, keyed by instrument name, that allow search to access
             counts, background, response, and other necessary data related to a particular instrument
+        like (Likelihood):
+            Instance of likelihood class with result of the likelihood fit
+        like_points (np.ndarray):
+            Array with the sky position associated with each entry in like.llr.
+            This can be smaller than Skygrid when sky_mask=True.
+        like_frame (SpacecraftFrame):
+            The spacecraft frame where like_points are defined
 
     Public Methods:
-        add_instrument:
-            Create and add a new InstrumentData instance to the instrument_data attribute
         get_timebins:
             Return a list with values for the start times and durations of each search bin
+        add_instrument:
+            Create and add a new InstrumentData instance to the instrument_data attribute
+        add_calculation:
+            Add a calculation to perform during the search
         calculate_likelihood:
             Perform likelihood calculation on a specific timebin across all instruments in the search
         run:
-            Run the search over a set of time bins
-        add_calculation:
-            Add a calculation to perform during the search
+            Run the search over a set of timebins
     """
     def __init__(self, config, skygrid):
         self.config = config
@@ -70,32 +77,19 @@ class TargetedSearch():
         self.like_points = None
         self.like_frame = None
 
-        self.calculations = []
-
-    def add_calculation(self, dtype, method, *args, **kwargs):
-        self.calculations.append({"method": method, "args": args, "kwargs": kwargs, "results": np.empty(0, dtype)})
-
-    def add_instrument(self, name, data, fitters, goodness_of_fit, response):
-        """Create and add a new InstrumentData instance to the instrument_data attribute
-
-        Args:
-            name (str): Instrument name
-            data (DataCollection[TTE|Phaii]): Data Collection to extract counts and exposure for this instrument
-            fitters (DataCollection[BackgroundFitter]): Data Collection with background fit
-            goodness_of_fit (DataCollection[FitStatus]): Data collection with the goodness-of-fit metric
-            response (BaseResponse): Instrument response object
-        """
-        self.instrument_data[name] = InstrumentData(data, fitters, goodness_of_fit, response)
+        self._calculations = []
 
     def get_timebins(self, t0=0):
-        """Calculate the time bins used in the search. These represent the different emission durations of the search
-        shifted across the full search range using a given step size.
+        """Calculate the time bins used in the search. Each bin is defined by a start time
+        and duration of source emission. The durations are defined logarithmically using
+        a power of 2 spacing from min_dur to max_dur. Start times allow for overlapping
+        search windows when step_size(dur) < dur.
 
         Args:
-            t0: Reference time for the search window
+            t0 (float): Reference time for the center of the search period
 
         Returns:
-            timebins: list of bins with tuples representing the start times and durations of each search bin
+            timebins (list[tuple]): List of tuples representing the start times and durations of each search bin
         """
         search_range = (-0.5 * self.config['win_width'], 0.5 * self.config['win_width'])
 
@@ -123,9 +117,36 @@ class TargetedSearch():
 
         return timebins
 
+    def add_instrument(self, name, data, fitters, goodness_of_fit, response):
+        """Create and add a new InstrumentData instance to the instrument_data attribute
+
+        Args:
+            name (str): Instrument name
+            data (DataCollection[TTE|Phaii]): Data Collection to extract counts and exposure for this instrument
+            fitters (DataCollection[BackgroundFitter]): Data Collection with background fit
+            goodness_of_fit (DataCollection[FitStatus]): Data collection with the goodness-of-fit metric
+            response (BaseResponse): Instrument response object
+        """
+        self.instrument_data[name] = InstrumentData(data, fitters, goodness_of_fit, response)
+
+    def add_calculation(self, dtype, method, *args, **kwargs):
+        """Adds a calculation to the search loop where `method`
+        is a function defined as
+        ```
+        def method(search: TargetedSearch, result: np.ndarray, *args, **kwargs):
+        ```
+
+        Args:
+            dtype (list): List of method return types given as [(name1, type1), (name2...)]
+            method (function): A function defined according to the the example shown above.
+            args (tuple, optional): Arguments passed to method
+            kargs (dict, optional): Keyword arguments passed to method
+        """
+        self._calculations.append({"method": method, "args": args, "kwargs": kwargs, "results": np.empty(0, dtype)})
+
     def calculate_likelihood(self, tstart, tstop, sky_mask=True):
         """Calculate the likelihood for a given time interval defined by [tstart, tstop].
-        Stores output in the like, like_points, and like_frame class attributes.
+        Stores the output in the like, like_points, and like_frame attributes.
 
         Args:
             tstart (float): Float representing the start of the timebin
@@ -153,7 +174,7 @@ class TargetedSearch():
 
             # gather counts, background, response, and sky mask matrix for this instrument
             counts_i, background_counts_i, background_var_i, good_i, response_matrix_i, sky_mask_matrix_i = \
-                instrument_data.integrate(tstart, tstop, reference=(refrence_frame, self.skygrid), sky_mask=sky_mask, channel_mask=instrument.channel_mask)
+                instrument_data.integrate(tstart, tstop, sky_mask=sky_mask, channel_mask=instrument.channel_mask, reference=(refrence_frame, self.skygrid))
 
             # update first instrument shape before stacking
             if i == 1:
@@ -192,19 +213,19 @@ class TargetedSearch():
         self.like_frame = reference_frame
 
     def run(self, timebins, time_ref=None, sky_mask=True):
-        """Run the search for a given target time
+        """Run the search over a set of timebins.
 
         Args:
-            timebins (np.ndarry): Array of time bins to search in with a format
-                                  of [[tstart1, duration1], [tstart2, ... ]
+            timebins (list[tuple]): List of tuples representing the start times and durations of each search bin
             time_ref (float, optional): Reference time for results file
             sky_mask (bool, optional): Mask obstructed sky locations (Earth, Moon, etc) when True
 
         Returns:
-            (list[tuple]): A list of tuples from which a Result object can be generated for each timebin
+            (Results): A Results object with the likelihood result + user calculated fields for each timebin.
         """
+        # prepare results arrays
         results = Results.create(len(timebins), time_ref=time_ref)
-        [calc['results'].resize(len(timebins)) for calc in self.calculations]
+        [calc['results'].resize(len(timebins)) for calc in self._calculations]
 
         for i, (tstart, duration) in enumerate(timebins):
             # compute the likelihood for this timebin
@@ -213,31 +234,32 @@ class TargetedSearch():
             # best-fit location
             az_max, zen_max = self.like_points[:, self.like.max_location]
 
-            # required result fields
+            # store required result fields
             results.data[i] = (
                 tstart, duration, az_max, zen_max, self.like.max_template,
                 self.like.photon_fluence/duration, *self.like.chisq,
                 self.like.marginal_llr)
 
-            # user calculated fields
-            for calc in self.calculations:
+            # build user calculated fields
+            for calc in self._calculations:
                 calc['results'][i] = calc['method'](self, results.data[i], *calc['args'], **calc['kwargs'])
 
-        if len(self.calculations):
-            results.append_arrays([calc['results'] for calc in self.calculations])
+        # combine required + user calculated results into a single array
+        if len(self._calculations):
+            results.append_arrays([calc['results'] for calc in self._calculations])
 
         return results
 
     def _align_timebins(self, timebins):
-        """Ensure that the timebins that have been generated match the reference instrument's bins in the case that the
-        reference instrument contains binned Phaii data
+        """Ensures timebins match the reference instrument's data when the
+        reference instrument contains binned Phaii data.
 
         Args:
-            timebins (list[tuple]): List of timebins with each tuple representing the start and duration of a given bin
+            timebins (list[tuple]): List of tuples representing the start times and durations of each search bin
 
         Returns:
-            (list[tuple]): List of timebins with each tuple aligned to the reference instrument's binned data,
-                or the original input in the case that alignment was not needed or the reference data was unbinned
+            (list[tuple]): List of timebins where the start time is aligned exactly with Phaii binning
+                           when using binned data, otherwise returns original timebins.
         """
         reference_instrument = self.config['reference_instrument']
         reference_data = self.instrument_data[reference_instrument].data
