@@ -37,28 +37,43 @@ class FitStatus:
         status: Retrieves goodness-of-fit status with True = good, False = bad.
     """
     def __init__(self, shape):
+        """Class constructor
+
+        Args:
+            shape (tuple): Shape of the goodness-of-fit array
+        """
         self.good = np.ones(shape, dtype=bool)
 
     def status(self, tstart, tstop):
-        """(ndarray): Goodness-of-fit array"""
+        """(ndarray): Goodness-of-fit array
+
+        Note: this returns a placeholder value which is always good
+        """
         return self.good
 
 
 class InstrumentData:
-    """Class for storing necessary data components for targeted search, for a single instrument.
+    """Class for storing data from a single instrument in a format accessible to the TargetedSearch class.
 
     Attributes:
         data (DataCollection): Collection of data for each detector
         fitters (DataCollection): Collection of background fits for each detector
         response (BaseResponse): Instrument response object
         goodness_of_fit (FitStatus): Collection of background fit statuses for each detector
+        good (np.ndarray): Goodness-of-fit array for the current integration interval
+        counts (np.ndarray): Counts array for the current integration interval
+        background_counts (np.ndarray): Background counts array for the current integration interval
+        background_var (np.ndarray): Background variance array for the current integration interval
+        response_matrix (np.ndarray): Response array for the current integration interval
+        sky_mask (np.ndarray): Array with visible sky positions for the current integration interval
 
     Public Methods:
+        get_timebin_offset: Computes time-of-flight from a reference frame to this instrument given a sky location
         format_data: Retrieve data counts, background counts, background variance, and goodness of fit for a time interval
         format_data_by_reference: Similar to format_data, but the time interval is calculated relative to another instrument
     """
     def __init__(self, data, fitters, goodness_of_fit, response):
-        """ Class constructor
+        """Class constructor
 
         Args:
             data (DataCollection[TTE|Phaii]): Data Collection to extract counts and exposure for this instrument
@@ -103,14 +118,22 @@ class InstrumentData:
         """list[Ebounds] representing the energy bounds of each detector in the instrument"""
         return self.data.ebounds()
 
-    def get_timebin_offset(self, reference_frame, target_skypos):
-        # TODO Calculate offset based on target sky pos, reference_frame, finding the frame in this instance's frames
-        #      that would correspond to when the energy beam would reach this instrument
-        #      Return a float representing the timebin offset, along with the spacecraft frame associated with it.
+    def get_timebin_offset(self, frame, location):
+        """Computes time-of-flight from a reference frame to this instrument given a sky location.
+
+        Args:
+            frame (SpacecraftFrame): Frame object with the position of a reference instrument
+            location (tuple): Sky location
+
+        Returns:
+            (float or np.ndarray)
+        """
+        # TODO Calculate time-of-flight from reference frame to the current instrument frame
+        #      based on a plane wave coming from location.
         return 0
 
     def integrate(self, tstart, tstop, reference=None, sky_mask=True, channel_mask=None):
-        """ Method to integrate data and responses over time interval [tstart, tstop]
+        """Method to integrate data and responses over time interval [tstart, tstop]
 
         Args:
             tstart (float): Start of the time bin
@@ -142,12 +165,9 @@ class InstrumentData:
         return self.counts, self.background_counts, self.background_var, self.good, self.response_matrix, self.sky_mask_matrix
 
     def format_data(self, tstart, tstop):
-        """Formats the instrument's counts, background rates, background variance, and response, including masking only
-        good bins and the earth mask, for the scanner to use in its search. Used if this is the reference instrument
-        used by the scanner
+        """Formats the counts, background counts, background variance in the current instrument's frame.
 
         Args:
-            instrument_config (InstrumentConfiguration): The configuration for this instrument
             tstart (float): Start of the time bin
             tstop (float): End of the time bin
 
@@ -173,17 +193,19 @@ class InstrumentData:
 
         return np.ravel(counts), np.ravel(background_counts), np.ravel(background_var), np.ravel(good)
 
-    def format_data_by_reference(self, tstart, tstop, reference_frame, skygrid):
-        """Formats the instrument's counts, background rates, background variance, and response, including masking only
-        good bins and the earth mask, for the scanner to use in its search. Used if this is an additional instrument,
-        and not the reference instrument, for the scanner
+    def format_data_by_reference(self, tstart, tstop, frame, skygrid):
+        """Formats the counts, background counts, background variance for searches that
+        use another instrument as the reference frame.
 
-        TODO Implementation in progress, pseudocode only for now
+        TODO:
+            1. Implement get_timebin_offset
+            2. Update Likelihood._flatten_data to handle case where counts
+               has the shape (nsky, ndetector_channels) instead of (ndetector_channels)
 
         Args:
             tstart (float): Start of the time bin
             tstop (float): End of the time bin
-            reference_frame (SpacecraftFrame): The frame of the reference craft/instrument
+            frame (SpacecraftFrame): The frame of the reference instrument
             skygrid (Skygrid): The skygrid we are searching over, from the scanner
 
         Returns:
@@ -195,7 +217,7 @@ class InstrumentData:
         for i, skypos in enumerate(skygrid._points.T):
 
             # get data at the time offset for this position
-            offset = self.get_timebin_offset(reference_frame, skypos)
+            offset = self.get_timebin_offset(frame, skypos)
             data_at_offset = self.format_data(tstart + offset, tstop + offset)
 
             # store for output
