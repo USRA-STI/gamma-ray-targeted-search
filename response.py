@@ -81,6 +81,7 @@ class GBMResponse(BaseResponse):
         geo_azimuth (float): Azimuth of the Earth center in radians for current response period
         geo_radius (float): Radius of the Earth in radians for current response period
         response_matrix (np.ndarray): Response matrix for current response period
+        _preprocessed (dict): Preprocessed values for generating the response matrix
 
     Public Methods:
         load_response: Method to compute the response matrix for a given time bin
@@ -127,7 +128,7 @@ class GBMResponse(BaseResponse):
         self.geo_radius = None
         self.response_matrix = None
 
-        self._preprocessed_values = {}
+        self._preprocessed = {}
 
     def preprocess(self, timebins):
         """Method for pre-processing expensive calculations used during
@@ -140,23 +141,25 @@ class GBMResponse(BaseResponse):
         tstart, dur = np.transpose(timebins)
         tstop = tstart + dur
 
-        # Remove existing preprocessing
-        self._preprocessed_values = {}
-
         # Apply astropy's broadcasting optimizations
         frames = self.spacecraft_frames.at(Time(0.5 * (tstart + tstop) + self.t0, format="fermi"))
         geo_azimuth, geo_zenith, geo_radius = get_geo_coordinates(frames)
 
+        # Store values
+        self._preprocessed = {'frames': frames, 'geo_azimuth': geo_azimuth, 'geo_zenith': geo_zenith, 'geo_radius': geo_radius}
+
         # Run through timebins to determine response load points.
         # This reduces disk i/o by sharing response matrices across
         # similar spacecraft positions.
-        prev_geo, time_range = None, None
+        prev_geo = None
+        time_range = None
+        self._preprocessed['load_points'] = {}
         for i in range(tstart.size):
             if prev_geo is None or angular_separation(geo_azimuth[i], 0.5 * np.pi - geo_zenith[i], *prev_geo) >= self.delta:
                 prev_geo = (geo_azimuth[i], 0.5 * np.pi - geo_zenith[i])
                 time_range = (tstart[i], tstop[i])
 
-            self._preprocessed_values[(tstart[i], tstop[i])] = (frames[i], (geo_azimuth[i], geo_zenith[i]), geo_radius[i], time_range)
+            self._preprocessed['load_points'][(tstart[i], tstop[i])] = (i, time_range)
 
     def load_response(self, tstart, tstop):
         """Generates the response matrix for a given spacecraft frame
@@ -172,12 +175,21 @@ class GBMResponse(BaseResponse):
         """
         load_geo_pos = None
 
-        if (tstart, tstop) in self._preprocessed_values:
-            self.frame, (self.geo_azimuth, self.geo_zenith), self.geo_radius, load_times = self._preprocessed_values[(tstart, tstop)]
-            if load_times == self.time_range: # response is loaded, return it
+        if (tstart, tstop) in self._preprocessed['load_points']:
+            i, time_range = self._preprocessed['load_points'][(tstart, tstop)]
+
+            self.frame = self._preprocessed['frames'][i]
+            self.geo_azimuth = self._preprocessed['geo_azimuth'][i]
+            self.geo_zenith = self._preprocessed['geo_zenith'][i]
+            self.geo_radius = self._preprocessed['geo_radius'][i]
+
+            if time_range == self.time_range: # response is loaded, return it
                 return self.response_matrix
-            if load_times != (tstart, tstop): # lookup load point geo position
-                load_geo_pos = self._preprocessed_values[(tstart, tstop)][1]
+
+            if time_range != (tstart, tstop): # lookup load point tstart, tstop, geo position
+                j, (tstart, tstop) = self._preprocessed['load_points'][time_range]
+                load_geo_pos = (self._preprocessed['geo_azimuth'][j],
+                                self._preprocessed['geo_zenith'][j])
         else:
             self.frame = self.spacecraft_frames.at(Time(0.5 * (tstart + tstop) + self.t0, format="fermi"))
             self.geo_azimuth, self.geo_zenith, self.geo_radius = get_geo_coordinates(self.frame, single=True)

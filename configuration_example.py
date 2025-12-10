@@ -145,6 +145,24 @@ wallt = unix_time.time()
 results = search.run(timebins)
 dt = unix_time.time() - wallt
 print("search took %.1f sec" % dt)
+
+from astropy.time import Time
+from astropy.coordinates import SkyCoord, get_sun
+
+frames = search.instrument_data['gbm'].response._preprocessed['frames']
+coordinate_max = SkyCoord(results['az'], 0.5 * np.pi - results['zen'], frame=frames, unit='rad')
+coordinate_sun = get_sun(Time(results['tstart'] + 0.5 * results['duration'], format='fermi'))
+
+results.append_fields(
+    ["ra", "dec", "sun_angle", "geo_angle"],
+    [coordinate_max.icrs.ra.radian,
+     coordinate_max.icrs.dec.radian,
+     coordinate_sun.separation(coordinate_max).radian,
+     frames.geocenter.separation(coordinate_max).radian])
+
+print("sun", np.degrees(results['sun_angle']))
+print("geo", np.degrees(results['geo_angle']))
+
 print(results.data.dtype)
 print(results[0])
 print(results['duration'])
