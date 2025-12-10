@@ -103,12 +103,13 @@ class SkyGrid():
 
         return np.deg2rad(np.array(rows).T)
 
-def get_geo_coordinates(frame, unit='rad'):
+def get_geo_coordinates(frame, unit='rad', single=False):
     """ Convert the geocenter coordinates from celestial to spacecraft coordinates
 
     Args:
         frame (Frame): frame object with spacecraft position 
         unit (str): unit to return
+        single (bool): return a single value
 
     Returns:
         (float, float, float): tuple with geocenter (az, zen) and Earth's angular radius in the specified unit
@@ -117,7 +118,9 @@ def get_geo_coordinates(frame, unit='rad'):
     geo_azimuth = geo_coord.az
     geo_zenith = 90 * u.deg - geo_coord.el
 
-    return geo_azimuth[0].to_value(unit), geo_zenith[0].to_value(unit), frame.earth_angular_radius.to_value(unit)
+    if single:
+        return geo_azimuth[0].to_value(unit), geo_zenith[0].to_value(unit), frame.earth_angular_radius.to_value(unit)
+    return geo_azimuth.to_value(unit), geo_zenith.to_value(unit), frame.earth_angular_radius.to_value(unit)
 
 def create_earth_mask(points, geo_azimuth, geo_zenith, geo_radius):
     """ Creates a mask with visible locations set to True and non-visible

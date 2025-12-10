@@ -63,6 +63,7 @@ gbm_config.channel_mask
 t0 = 524666469.4457
 
 search_config = SearchConfiguration(win_width=10, min_dur=1.024, max_dur=1.024, instruments=[gbm_config])
+#search_config = SearchConfiguration(win_width=60, min_dur=0.064, max_dur=8.192, instruments=[gbm_config])
 
 time_range = search_config.time_range
 
@@ -134,10 +135,13 @@ search.add_calculation([("snr1", "<f8"), ("snr0", "<f8")], calculate_top_snr, in
 pe_channels = gbm_config.select_channels({det.name: [0, 1] for det in GbmDetectors.nai()})
 search.add_calculation([("pe0", "<f8"), ("pe1", "<f8"), ("pe2", "<f8")], calculate_pe_variables, instrument="gbm", channels=pe_channels)
 
-
 # run the search
 timebins = search.get_timebins()
+response.preprocess(timebins)
+wallt = unix_time.time()
 results = search.run(timebins)
+dt = unix_time.time() - wallt
+print("search took %.1f sec" % dt)
 print(results.data.dtype)
 print(results[0])
 print(results['duration'])

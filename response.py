@@ -25,6 +25,7 @@
 # License.
 #
 import os
+import time as unix_time
 import numpy as np
 
 from abc import ABC, abstractmethod
@@ -74,10 +75,12 @@ class GBMResponse(BaseResponse):
         available_azimuths (list): List of available atmospheric response azimuths
         direct (dict): Dictionary with direct response matrices for each detector
         frame (SpacecraftFrame): Frame with spacecraft orientation for current response period
+        in_rock (int): Rocking profile for current response period
+        time_range (tuple[float]): Time range in seconds for current response period
         geo_zenith (float): Zenith of the Earth center in radians for current response period
         geo_azimuth (float): Azimuth of the Earth center in radians for current response period
         geo_radius (float): Radius of the Earth in radians for current response period
-        cache (dict): Cached response
+        response_matrix (np.ndarray): Response matrix for current response period
 
     Public Methods:
         load_response: Method to compute the response matrix for a given time bin
@@ -117,15 +120,48 @@ class GBMResponse(BaseResponse):
             self.direct[detector] = self.load_direct_response(detector)
 
         self.frame = None
-
+        self.in_rock = None
+        self.time_range = None
         self.geo_azimuth = None
         self.geo_zenith = None
         self.geo_radius = None
+        self.response_matrix = None
 
-        self.cache = None
+        self._preprocessed_values = {}
+
+    def preprocess(self, timebins):
+        """Method for pre-processing expensive calculations used during
+        a search over many timebins. Running this before a search makes
+        the search run faster.
+
+        Args:
+            timebins (list[tuple]): List of tuples representing the start times and durations of each search bin
+        """
+        tstart, dur = np.transpose(timebins)
+        tstop = tstart + dur
+
+        # Remove existing preprocessing
+        self._preprocessed_values = {}
+
+        # Apply astropy's broadcasting optimizations
+        frames = self.spacecraft_frames.at(Time(0.5 * (tstart + tstop) + self.t0, format="fermi"))
+        geo_azimuth, geo_zenith, geo_radius = get_geo_coordinates(frames)
+
+        # Run through timebins to determine response load points.
+        # This reduces disk i/o by sharing response matrices across
+        # similar spacecraft positions.
+        prev_geo, time_range = None, None
+        for i in range(tstart.size):
+            if prev_geo is None or angular_separation(geo_azimuth[i], 0.5 * np.pi - geo_zenith[i], *prev_geo) >= self.delta:
+                prev_geo = (geo_azimuth[i], 0.5 * np.pi - geo_zenith[i])
+                time_range = (tstart[i], tstop[i])
+
+            self._preprocessed_values[(tstart[i], tstop[i])] = (frames[i], (geo_azimuth[i], geo_zenith[i]), geo_radius[i], time_range)
 
     def load_response(self, tstart, tstop):
         """Generates the response matrix for a given spacecraft frame
+
+        Note: We currently assume a constant response over the full period (i.e. short burst approximation)
 
         Args:
             tstart (float): Start of the response period
@@ -134,32 +170,41 @@ class GBMResponse(BaseResponse):
         Returns:
             (np.ndarray): Response matrix
         """
-        # constant response over the full period (i.e. short burst approximation)
-        t = Time(0.5 * (tstart + tstop) + self.t0, format="fermi") 
-        self.frame = self.spacecraft_frames.at(t) 
-        self.geo_azimuth, self.geo_zenith, self.geo_radius = get_geo_coordinates(self.frame)
+        load_geo_pos = None
 
-        if self.cache is None or angular_separation(self.geo_azimuth, 0.5 * np.pi - self.geo_zenith, *self.cache["geo"]) >= self.delta:
-            # build reponse matrix from direct + atmospheric scattering components
-            # when the cached matrix is None or the spacecraft has moved more than delta
-            responses = []
-
-            for detector in self.detectors:
-                direct = self.direct[detector]
-                atmo = self.load_atmospheric_response(detector, self.geo_azimuth, self.geo_zenith)
-                responses.append(direct + atmo)
-
-            response = np.concatenate(responses, axis=2)
-
-            if self.templates:
-                response = response[self.templates, :, :]
-
-            self.cache = {"response": response, "geo": (self.geo_azimuth, 0.5 * np.pi - self.geo_zenith)}
+        if (tstart, tstop) in self._preprocessed_values:
+            self.frame, (self.geo_azimuth, self.geo_zenith), self.geo_radius, load_times = self._preprocessed_values[(tstart, tstop)]
+            if load_times == self.time_range: # response is loaded, return it
+                return self.response_matrix
+            if load_times != (tstart, tstop): # lookup load point geo position
+                load_geo_pos = self._preprocessed_values[(tstart, tstop)][1]
         else:
-            # otherwise retrieve the cached response matrix
-            response = self.cache["response"]
+            self.frame = self.spacecraft_frames.at(Time(0.5 * (tstart + tstop) + self.t0, format="fermi"))
+            self.geo_azimuth, self.geo_zenith, self.geo_radius = get_geo_coordinates(self.frame, single=True)
 
-        return response
+        # load current geo position if we aren't loading a pre-processed position
+        if load_geo_pos is None:
+            load_geo_pos = (self.geo_azimuth, self.geo_zenith)
+
+        # build reponse matrix from direct + atmospheric scattering components
+        # when load is requested or the cached matrix is None
+        responses = []
+
+        for detector in self.detectors:
+            direct = self.direct[detector]
+            atmo = self.load_atmospheric_response(detector, *load_geo_pos)
+            responses.append(direct + atmo)
+
+        response = np.concatenate(responses, axis=2)
+
+        if self.templates:
+            response = response[self.templates, :, :]
+
+        self.response_matrix = response
+        self.in_rock = int(isinstance(atmo, np.ndarray))
+        self.time_range = (tstart, tstop)
+
+        return self.response_matrix
 
     def sky_mask(self):
         """(np.ndarray): Generates sky mask with visible locations set to True, Earth occulted set to False."""
