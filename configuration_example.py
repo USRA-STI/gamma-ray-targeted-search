@@ -135,6 +135,9 @@ search.add_calculation([("snr1", "<f8"), ("snr0", "<f8")], calculate_top_snr, in
 pe_channels = gbm_config.select_channels({det.name: [0, 1] for det in GbmDetectors.nai()})
 search.add_calculation([("pe0", "<f8"), ("pe1", "<f8"), ("pe2", "<f8")], calculate_pe_variables, instrument="gbm", channels=pe_channels)
 
+# save rocking profile value
+search.add_calculation([("in_rock", "<i8")], lambda search, result: search.instrument_data['gbm'].response.in_rock)
+
 # run the search
 timebins = search.get_timebins()
 response.preprocess(timebins)
