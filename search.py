@@ -91,7 +91,7 @@ class TargetedSearch():
         Returns:
             timebins (list[tuple]): List of tuples representing the start times and durations of each search bin
         """
-        search_range = (-0.5 * self.config['win_width'], 0.5 * self.config['win_width'])
+        search_range = self.config['search_range']
 
         # Durations to search in powers of two
         log2maxdur = np.round(np.log2(self.config['max_dur']))
