@@ -27,6 +27,7 @@
 import os
 import sys
 import glob
+import time
 import numpy as np
 import argparse
 import datetime
@@ -34,15 +35,23 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-import gts
-import time
+import data
 import utils
 import plots
+import search
+import results
+import response
+import configuration
 
-from configuration import InstrumentConfiguration, SearchConfiguration
 from skymap import O3_DGAUSS_Model, LigoHealPix
 
 from gdt.core.plot.sky import EquatorialPlot
+from gdt.core.collection import DataCollection
+from gdt.core.binning.binned import rebin_by_edge_index
+from gdt.core.binning.unbinned import bin_by_time
+from gdt.core.background.fitter import BackgroundFitter
+from gdt.core.background.binned import Polynomial
+from gdt.core.background.unbinned import NaivePoisson
 from gdt.missions.fermi.time import Time
 from gdt.missions.fermi.gbm.saa import GbmSaa
 from gdt.missions.fermi.gbm.tte import GbmTte
@@ -66,6 +75,7 @@ def GetData(trigger_id, settings, data_directory):
         (Time, [str, str, ...], str): tuple with Time() formatted trigger time, 
                                       list of TTE file paths, and position history path
     """
+    ftp = None
 
     # boolean for specifying requested data type (triggered or continuous)
     triggered = isinstance(trigger_id, str)
@@ -78,13 +88,13 @@ def GetData(trigger_id, settings, data_directory):
     
     # check for files
     tte_files = []
-    for det in settings.detectors:
+    for det in settings['detectors']:
         tte_files.extend(glob.glob(tte_wildcard.replace("??", det)))
     poshist_files = sorted(glob.glob(poshist_wildcard))
 
-    if len(tte_files) < len(detectors):
+    if len(tte_files) < len(settings['detectors']):
         ftp = TriggerFinder(trigger_id) if triggered else ContinuousFinder(trigger_id)
-        tte_files = ftp.get_tte(path, dets=detectors)
+        tte_files = ftp.get_tte(path, dets=settings['detectors'])
 
     # get trigtime from first triggered TTE file when using triggered files
     if triggered:
@@ -94,13 +104,12 @@ def GetData(trigger_id, settings, data_directory):
 
     # ensure we have a position history file
     if not len(poshist_files):
-        if triggered:
-            # need to update ftp object because poshist are from continuous file set
-            ftp = ContinuousFtp(trigtime)
+        if ftp is None or triggered:
+            ftp = ContinuousFinder(trigger_id)
         ftp.get_poshist(path)
         poshist_files = sorted(glob.glob(poshist_wildcard))
             
-    if len(tte_files) != len(detectors) or not len(poshist_files):
+    if len(tte_files) != len(settings['detectors']) or not len(poshist_files):
         raise ValueError("Could not download or locate files. Check ")
 
     # only return first poshist for now.
@@ -150,36 +159,40 @@ def main():
 
     nai_configs = {det.name: {'channel_edges': [0, 8, 20, 33, 51, 85, 106, 127, 128], 'search_channels': [1, 2, 3, 4, 5, 6]} for det in GbmDetectors.nai()}
     bgo_configs = {det.name: {'channel_edges': [0, 8, 21, 40, 65, 90, 112, 124, 128], 'search_channels': [0, 1, 2, 3, 4, 5, 6, 7]} for det in GbmDetectors.bgo()}
-    gbm_config = InstrumentConfiguration('gbm', nai_configs | bgo_configs)
+    gbm_config = configuration.InstrumentConfiguration('gbm', nai_configs | bgo_configs)
 
-    search_config = SearchConfiguration(instrument_configs=[gbm_config])
-    search_config.search_settings.update({
+    search_config = configuration.SearchConfiguration(instruments=[gbm_config])
+    search_config.settings.update({
          'win_width': args.search_window_width,
          'min_loglr': 5,
          'min_dur': args.min_dur, 'max_dur': args.max_dur,
-         'min_step': args.min_step,'num_steps': args.num_steps})
+         'min_step': args.min_step,'num_steps': args.num_steps,
+         'bkgd_range': [-500, 500], 'bkgd_window': 125.0,
+         'data_range': np.array([-0.5, 0.5]) * (args.search_window_width + args.max_dur)})
 
     trigtime, tte_files, poshist_file = GetData(trigger, gbm_config, "data/gbm")
 
-    # Load the tte data into memory
     print("opening TTE")
     tte_data = []
-    for tte_file in tte_files:
-        tte = update_tte_trigtime(GbmTte.open(tte_file), t0)
-        tte = tte.rebin_energy(rebin_by_edge_index, settings['detectors'][tte.detector]['channel_edges'])
+    for i, det_config in enumerate(gbm_config['detectors'].values()):
+        tte = utils.update_tte_trigtime(GbmTte.open(tte_files[i]), trigtime.value)
+        tte = tte.rebin_energy(rebin_by_edge_index, np.array(det_config['channel_edges']))
         tte_data.append(tte)
 
-    print("re-binning TTE for search")
-    # Convert the tte data to binned phaii data using a time range of at least +/-30 seconds
-    time_range = np.array([-1, 1]) * max([0.5 * args.search_window_width + args.max_dur + 1.024, 30])
-    # data = PhaiiMatrix(tte_data, settings, t0=trigtime.fermi, resolution=settings["min_step"])
-    # counts, exposure = data.counts(0, 1.024)
-    # print("flat counts", counts)
-    # print("flat exposure", exposure)
+    ttes = DataCollection.from_list(tte_data, names=gbm_config['detector_names'])
 
-    # bin data
-    pha2_data = data.bin()
+    print("binning TTE for search")
+    phaiis = DataCollection.from_list(
+         ttes.to_phaii(bin_by_time, search_config['time_resolution'], time_ref=0, time_range=search_config['data_range']),
+         names=gbm_config['detector_names'])
+
+    print("fitting background")
+    backfitters = DataCollection.from_list(
+        [BackgroundFitter.from_tte(tte.slice_time(search_config['bkgd_range']), NaivePoisson) for tte in ttes],
+        names=gbm_config['detector_names'])
+    backfitters.fit(window_width=search_config['bkgd_window'], fast=True)
     
+    exit(0)
     # save data products to local variables
     trigtime = data.trigtime
     time_range = data.time_range
