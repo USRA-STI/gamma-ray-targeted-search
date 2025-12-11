@@ -41,8 +41,8 @@ from scipy.integrate import trapezoid
 from scipy.optimize import fmin
 from astropy.coordinates import SkyCoord
 
-def log_sky_prior(grid, frame, skymap=None, pmin=1e-100):
-    """Calculate log of the sky prior given a map, or do uniform prior, in a spacecraft frame.
+def sky_prior(grid, frame, skymap=None, pmin=1e-100):
+    """Calculate the sky prior given a map, or do uniform prior, in a spacecraft frame.
     Rotate skymap into the spacecraft frame if it's a HealPix array, otherwise treat it as an
     array in the spacecraft frame.
 
@@ -50,15 +50,14 @@ def log_sky_prior(grid, frame, skymap=None, pmin=1e-100):
         grid (np.ndarray): Grid of sky locations used in the instrument response
         frame (Frame): Frame object with information about spacecraft position
         skymap (HealPix | np.ndarray): Localization probability to use as the prior. Use uniform prior when None.
-        pmin (float): Minimum allowed probability (avoids zero divergence)
 
     Returns:
         (np.ndarray): The sky prior in the spacecraft frame
     """
     if skymap is None:
-        skyprior = np.ones(len(grid[0]), np.float64)
+        prior = np.ones(len(grid[0]), np.float64)
     elif isinstance(skymap, np.ndarray):
-        skyprior = skymap
+        prior = skymap
     else:
         # Get the azimuth and zenith of each unmasked sky grid position
         azimuth, zenith = grid
@@ -73,12 +72,24 @@ def log_sky_prior(grid, frame, skymap=None, pmin=1e-100):
         # We need to use exact values to ensure consistency between multiorder vs single resolution map formats.
         ph, th = ra.rad, 0.5 * np.pi - dec.rad
         pix = hp.ang2pix(skymap.nside, th, ph)
-        skyprior = (skymap.prob / skymap.pixel_area)[pix]
+        prior = (skymap.prob / skymap.pixel_area)[pix]
 
     # Ensure we're normalized to 1
-    skyprior /= skyprior.sum()
+    prior /= prior.sum()
 
-    return np.log(np.maximum(skyprior, pmin))
+    return prior
+
+def log_sky_prior(prior, pmin=1e-100):
+    """Return log of the sky prior
+
+    Args:
+        prior (np.ndarray): Normalized probability at each sky location
+        pmin (float): Minimum allowed probability (avoids zero divergence)
+
+    Returns:
+        (np.ndarray): Log of the sky prior
+    """
+    return np.log(np.maximum(prior, pmin))
 
 def calculate_top_snr(search, result, instrument, channels, n=1):
     """Calculate top `n` signal-to-noise ratios (SNR) for each result.
@@ -150,8 +161,37 @@ def calculate_coinclr(search, result, skymap=None):
     Returns:
         (float): The likelihood ratio marginalized over skymap
     """
-    log_prior = log_sky_prior(search.like_points, search.like_frame, skymap)
+    log_prior = log_sky_prior(
+        sky_prior(search.like_points, search.like_frame, skymap))
     return search.like.coinclr(log_prior, llratio=search.like.llr)
+
+def calculate_marginal_flux(search, result, skymap=None, durations=None):
+    """Marginalizes the fitted photon flux using spatial probability provided by in skymap.
+
+    Args:
+        search (TargetedSearch): The search class with instrument data
+        result (np.ndarray): The current search result
+        skymap (HealPix): A HealPix derived skymap class. Default of
+                          None marginalizes over a uniform prior with
+                          equal weight at every sky location.
+        durations (list): Restrict the calculation to the provided durations when not None
+
+    Returns:
+        (tuple): The marginalized photon flux followed by the fit error on the flux.
+                 Size is equal to 2x the number of spectral templates.
+    """
+    if durations is not None and result['duration'] not in durations:
+        return (0,) * 2 * search.like._pflux.shape[0]
+
+    prior = sky_prior(search.like_points, search.like_frame, skymap)
+    pflux = search.like._pflux
+    pflux_sig = search.like._pflux_sig
+
+    # marginalized flux using the spatial prior
+    marginal_pflux = np.sum(prior[np.newaxis,:] * pflux, axis=1) / result['duration']
+    marginal_pflux_sig = np.sqrt(np.sum((prior[np.newaxis,:] * pflux_sig)**2, axis=1)) / result['duration']
+
+    return tuple(marginal_pflux) + tuple(marginal_pflux_sig)
 
 class Results:
     required_dtype = [

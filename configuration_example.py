@@ -32,7 +32,7 @@ from rich.progress import track
 from configuration import InstrumentConfiguration, SearchConfiguration
 from response import GBMResponse
 from search import TargetedSearch
-from results import Results, calculate_top_snr, calculate_pe_variables, calculate_coinclr
+from results import Results, calculate_top_snr, calculate_pe_variables, calculate_coinclr, calculate_marginal_flux
 from utils import SkyGrid
 from data import FitStatus
 
@@ -140,6 +140,10 @@ search.add_calculation([("in_rock", "<i8")], lambda search, result: search.instr
 
 # save rocking profile value
 search.add_calculation([("coinclr", "<f8")], calculate_coinclr)
+
+# margilized photon flux
+search.add_calculation([(f"flux{i}", "<f8") for i in range(3)] +
+                       [(f"flux_sig{i}", "<f8") for i in range(3)], calculate_marginal_flux, durations=[1.024])
 
 # run the search
 timebins = search.get_timebins()
