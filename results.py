@@ -346,7 +346,7 @@ class FalseAlarmRate():
         obj._livetime = livetime
         return obj
 
-# TODO: Move to GBMResponse since these are the spectral templates used by GBM
+# TODO: Move to GbmResponse since these are the spectral templates used by GBM
 def soft():
     """ Soft Spectral Template describing lower 1/3rd of GBM GRBs
 
