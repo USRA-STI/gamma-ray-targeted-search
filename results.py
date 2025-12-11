@@ -39,13 +39,53 @@ import numpy.lib.recfunctions
 
 from scipy.integrate import trapezoid
 from scipy.optimize import fmin
+from astropy.coordinates import SkyCoord
+
+def log_sky_prior(grid, frame, skymap=None, pmin=1e-100):
+    """Calculate log of the sky prior given a map, or do uniform prior, in a spacecraft frame.
+    Rotate skymap into the spacecraft frame if it's a HealPix array, otherwise treat it as an
+    array in the spacecraft frame.
+
+    Args:
+        grid (np.ndarray): Grid of sky locations used in the instrument response
+        frame (Frame): Frame object with information about spacecraft position
+        skymap (HealPix | np.ndarray): Localization probability to use as the prior. Use uniform prior when None.
+        pmin (float): Minimum allowed probability (avoids zero divergence)
+
+    Returns:
+        (np.ndarray): The sky prior in the spacecraft frame
+    """
+    if skymap is None:
+        skyprior = np.ones(len(grid[0]), np.float64)
+    elif isinstance(skymap, np.ndarray):
+        skyprior = skymap
+    else:
+        # Get the azimuth and zenith of each unmasked sky grid position
+        azimuth, zenith = grid
+
+        # Get the equivelent RA and Dec of each unmasked sky grid position
+        coords = SkyCoord(azimuth, 0.5 * np.pi - zenith, frame=frame, unit='rad')
+        ra = coords.icrs.ra
+        dec = coords.icrs.dec
+
+        # Calculate the probability of each sky position
+        # For now, do explicit lookup with ang2pix to avoid GDT interpolation of values.
+        # We need to use exact values to ensure consistency between multiorder vs single resolution map formats.
+        ph, th = ra.rad, 0.5 * np.pi - dec.rad
+        pix = hp.ang2pix(skymap.nside, th, ph)
+        skyprior = (skymap.prob / skymap.pixel_area)[pix]
+
+    # Ensure we're normalized to 1
+    skyprior /= skyprior.sum()
+
+    return np.log(np.maximum(skyprior, pmin))
 
 def calculate_top_snr(search, result, instrument, channels, n=1):
     """Calculate top `n` signal-to-noise ratios (SNR) for each result.
 
     Args:
         search (TargetedSearch): The search class with instrument data
-        result (np.ndarry): The current search result
+        result (np.ndarray): The current search result
         instrument (str): The instrument name to use
         n (int): The number of SNR values to return
         channels (list): The channels to include given as [(det0_min, det0_max), (det1_min, ... ]
@@ -69,7 +109,7 @@ def calculate_pe_variables(search, result, instrument, channels):
 
     Args:
         search (TargetedSearch): The search class with instrument data
-        result (np.ndarry): The current search result
+        result (np.ndarray): The current search result
         instrument (str): The instrument name to use
         channels (list): The channels to include given as [(det0_min, det0_max), (det1_min, ... ]
 
@@ -97,6 +137,21 @@ def calculate_pe_variables(search, result, instrument, channels):
     # much less than snr[j, 0] for real phosphorescence events.
     return (snr[j, 0], snr[i, 0], snr[j, 1])
 
+def calculate_coinclr(search, result, skymap=None):
+    """Marginalizes the likelihood ratio using spatial probability provided by in skymap.
+
+    Args:
+        search (TargetedSearch): The search class with instrument data
+        result (np.ndarray): The current search result
+        skymap (HealPix): A HealPix derived skymap class. Default of
+                          None marginalizes over a uniform prior with
+                          equal weight at every sky location.
+
+    Returns:
+        (float): The likelihood ratio marginalized over skymap
+    """
+    log_prior = log_sky_prior(search.like_points, search.like_frame, skymap)
+    return search.like.coinclr(log_prior, llratio=search.like.llr)
 
 class Results:
     required_dtype = [

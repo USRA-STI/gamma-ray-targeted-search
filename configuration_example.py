@@ -32,7 +32,7 @@ from rich.progress import track
 from configuration import InstrumentConfiguration, SearchConfiguration
 from response import GBMResponse
 from search import TargetedSearch
-from results import Results, calculate_top_snr, calculate_pe_variables
+from results import Results, calculate_top_snr, calculate_pe_variables, calculate_coinclr
 from utils import SkyGrid
 from data import FitStatus
 
@@ -137,6 +137,9 @@ search.add_calculation([("pe0", "<f8"), ("pe1", "<f8"), ("pe2", "<f8")], calcula
 
 # save rocking profile value
 search.add_calculation([("in_rock", "<i8")], lambda search, result: search.instrument_data['gbm'].response.in_rock)
+
+# save rocking profile value
+search.add_calculation([("coinclr", "<f8")], calculate_coinclr)
 
 # run the search
 timebins = search.get_timebins()
