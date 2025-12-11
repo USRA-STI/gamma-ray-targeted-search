@@ -58,7 +58,7 @@ class BaseResponse(ABC):
         return None
 
 
-class GBMResponse(BaseResponse):
+class GbmResponse(BaseResponse):
     """Implementation of the GBM instrument response for the TargetedSearch
 
     Attributes:

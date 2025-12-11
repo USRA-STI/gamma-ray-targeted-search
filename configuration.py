@@ -99,13 +99,13 @@ class BaseConfiguration(yaml.YAMLObject):
 
     @classmethod
     def open(cls, path):
-        """Create a new instance of InstrumentConfiguration given an input file
+        """Create a new instance of BaseConfiguration given an input file
 
         Args:
             path (str): Path to configuration file
 
         Returns:
-            configured_instrument (InstrumentConfiguration): Instance of InstrumentConfiguration
+            configured_instrument (BaseConfiguration): Instance of BaseConfiguration derived class
         """
         if not os.path.isfile(path):
             raise FileNotFoundError(f"No such file: '{path}'")
@@ -258,7 +258,7 @@ class SearchConfiguration(BaseConfiguration):
     """
     yaml_tag = "!configuration.SearchConfiguration"
 
-    _derived_keys = ['instrument_names', 'reference_instrument', 'time_range', 'time_resolution']
+    _derived_keys = ['instrument_names', 'reference_instrument', 'search_range', 'time_resolution']
 
     def __init__(self, win_width=60, min_loglr=5.0, min_dur=0.064, max_dur=8.192,
                  min_step=0.064, num_steps=8, skygrid_resolution=5.0,
@@ -333,9 +333,9 @@ class SearchConfiguration(BaseConfiguration):
         return self['instruments'][0]['name']
 
     @property
-    def time_range(self):
+    def search_range(self):
         """(numpy.ndarray): Search time range (tstart, tstop)"""
-        return np.array([-0.5 * self['win_width'], 0.5 * self['win_width']])
+        return 0.5 * np.array([-self['win_width'], self['win_width']])
 
     @property
     def time_resolution(self):

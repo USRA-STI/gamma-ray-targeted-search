@@ -30,7 +30,7 @@ import time as unix_time
 from rich.progress import track
 
 from configuration import InstrumentConfiguration, SearchConfiguration
-from response import GBMResponse
+from response import GbmResponse
 from search import TargetedSearch
 from results import Results, calculate_top_snr, calculate_pe_variables, calculate_coinclr, calculate_marginal_flux
 from utils import SkyGrid
@@ -65,7 +65,7 @@ t0 = 524666469.4457
 search_config = SearchConfiguration(win_width=10, min_dur=1.024, max_dur=1.024, instruments=[gbm_config])
 #search_config = SearchConfiguration(win_width=60, min_dur=0.064, max_dur=8.192, instruments=[gbm_config])
 
-time_range = search_config.time_range
+time_range = search_config.search_range
 
 skygrid = utils.SkyGrid(search_config['skygrid_resolution'])
 
@@ -122,7 +122,7 @@ poshist = GbmPosHist.open("data/gbm/524666469.429/glg_poshist_all_170817_v01.fit
 
 spacecraft_frames = poshist.get_spacecraft_frame()
 
-response = GBMResponse(phaiis.items, skygrid, 'templates/GBM', spacecraft_frames, ttes.get_item("n0").trigtime, templates=[0, 1, 2])
+response = GbmResponse(phaiis.items, skygrid, 'templates/GBM', spacecraft_frames, ttes.get_item("n0").trigtime, templates=[0, 1, 2])
 
 search = TargetedSearch(search_config, skygrid)
 search.add_instrument('gbm', phaiis, backfitters, goodness_of_fit, response)
