@@ -41,55 +41,7 @@ from scipy.integrate import trapezoid
 from scipy.optimize import fmin
 from astropy.coordinates import SkyCoord
 
-def sky_prior(grid, frame, skymap=None, pmin=1e-100):
-    """Calculate the sky prior given a map, or do uniform prior, in a spacecraft frame.
-    Rotate skymap into the spacecraft frame if it's a HealPix array, otherwise treat it as an
-    array in the spacecraft frame.
-
-    Args:
-        grid (np.ndarray): Grid of sky locations used in the instrument response
-        frame (Frame): Frame object with information about spacecraft position
-        skymap (HealPix | np.ndarray): Localization probability to use as the prior. Use uniform prior when None.
-
-    Returns:
-        (np.ndarray): The sky prior in the spacecraft frame
-    """
-    if skymap is None:
-        prior = np.ones(len(grid[0]), np.float64)
-    elif isinstance(skymap, np.ndarray):
-        prior = skymap
-    else:
-        # Get the azimuth and zenith of each unmasked sky grid position
-        azimuth, zenith = grid
-
-        # Get the equivelent RA and Dec of each unmasked sky grid position
-        coords = SkyCoord(azimuth, 0.5 * np.pi - zenith, frame=frame, unit='rad')
-        ra = coords.icrs.ra
-        dec = coords.icrs.dec
-
-        # Calculate the probability of each sky position
-        # For now, do explicit lookup with ang2pix to avoid GDT interpolation of values.
-        # We need to use exact values to ensure consistency between multiorder vs single resolution map formats.
-        ph, th = ra.rad, 0.5 * np.pi - dec.rad
-        pix = hp.ang2pix(skymap.nside, th, ph)
-        prior = (skymap.prob / skymap.pixel_area)[pix]
-
-    # Ensure we're normalized to 1
-    prior /= prior.sum()
-
-    return prior
-
-def log_sky_prior(prior, pmin=1e-100):
-    """Return log of the sky prior
-
-    Args:
-        prior (np.ndarray): Normalized probability at each sky location
-        pmin (float): Minimum allowed probability (avoids zero divergence)
-
-    Returns:
-        (np.ndarray): Log of the sky prior
-    """
-    return np.log(np.maximum(prior, pmin))
+from priors import sky_prior, log_prior
 
 def calculate_top_snr(search, result, instrument, channels, n=1):
     """Calculate top `n` signal-to-noise ratios (SNR) for each result.
@@ -161,9 +113,9 @@ def calculate_coinclr(search, result, skymap=None):
     Returns:
         (float): The likelihood ratio marginalized over skymap
     """
-    log_prior = log_sky_prior(
+    log_p = log_prior(
         sky_prior(search.like_points, search.like_frame, skymap))
-    return search.like.coinclr(log_prior, llratio=search.like.llr)
+    return search.like.coinclr(log_p, llratio=search.like.llr)
 
 def calculate_marginal_flux(search, result, skymap=None, durations=None):
     """Marginalizes the fitted photon flux using spatial probability provided by in skymap.
