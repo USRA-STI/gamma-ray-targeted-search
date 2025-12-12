@@ -35,16 +35,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-import data
-import utils
-import plots
-import search
-import results
-import response
-import configuration
-
-from skymap import O3_DGAUSS_Model, LigoHealPix
-
+from astropy.coordinates import SkyCoord, get_sun
 from gdt.core.plot.sky import EquatorialPlot
 from gdt.core.collection import DataCollection
 from gdt.core.binning.binned import rebin_by_edge_index
@@ -59,6 +50,16 @@ from gdt.missions.fermi.gbm.poshist import GbmPosHist
 from gdt.missions.fermi.gbm.detectors import GbmDetectors
 from gdt.missions.fermi.gbm.localization import GbmHealPix
 from gdt.missions.fermi.gbm.finders import ContinuousFinder, TriggerFinder
+
+from data import FitStatus
+from utils import SkyGrid, update_tte_trigtime
+from plots import TargetedLightcurves, Waterfall, plot_orbit
+from skymap import O3_DGAUSS_Model, LigoHealPix
+from search import TargetedSearch
+from results import Results, calculate_top_snr, calculate_pe_variables, calculate_marginal_flux
+from response import GbmResponse
+from configuration import InstrumentConfiguration, SearchConfiguration
+
 
 basedir = os.path.dirname(os.path.abspath(__file__))
 
@@ -159,9 +160,9 @@ def main():
 
     nai_configs = {det.name: {'channel_edges': [0, 8, 20, 33, 51, 85, 106, 127, 128], 'search_channels': [1, 2, 3, 4, 5, 6]} for det in GbmDetectors.nai()}
     bgo_configs = {det.name: {'channel_edges': [0, 8, 21, 40, 65, 90, 112, 124, 128], 'search_channels': [0, 1, 2, 3, 4, 5, 6, 7]} for det in GbmDetectors.bgo()}
-    gbm_config = configuration.InstrumentConfiguration('gbm', nai_configs | bgo_configs)
+    gbm_config = InstrumentConfiguration('gbm', nai_configs | bgo_configs)
 
-    search_config = configuration.SearchConfiguration(instruments=[gbm_config])
+    search_config = SearchConfiguration(instruments=[gbm_config])
     search_config.settings.update({
          'win_width': args.search_window_width,
          'min_loglr': 5,
@@ -175,7 +176,7 @@ def main():
     print("opening TTE")
     tte_data = []
     for i, det_config in enumerate(gbm_config['detectors'].values()):
-        tte = utils.update_tte_trigtime(GbmTte.open(tte_files[i]), trigtime.value)
+        tte = update_tte_trigtime(GbmTte.open(tte_files[i]), trigtime.value)
         tte = tte.rebin_energy(rebin_by_edge_index, np.array(det_config['channel_edges']))
         tte_data.append(tte)
 
@@ -192,39 +193,54 @@ def main():
         names=gbm_config['detector_names'])
     backfitters.fit(window_width=search_config['bkgd_window'], fast=True)
     
-    exit(0)
-    # save data products to local variables
-    trigtime = data.trigtime
-    time_range = data.time_range
-    poshist_file = data.poshist_file
-    
+    goodness_of_fit = DataCollection.from_list(
+        [FitStatus(len(edges) - 1) for det, edges in gbm_config["channel_edges"].items()],
+        names=gbm_config['detector_names'])
+
     print("opening poshist")
-    # Get the spacecraft frame
     poshist = GbmPosHist.open(poshist_file)
     spacecraft_frames = poshist.get_spacecraft_frame()
 
+    print("opening the response")
     # Get the response for hard, normal, soft spectral templates
-    print("opening the response files")
-    kwargs = {'templates': [0, 1, 2], 'channels': [1, 2, 3, 4, 5, 6]}
-    direct_path = os.path.join(basedir, 'templates/GBM/direct/nai.npy')
-    response = gts.loadResponse(direct_path, **kwargs)
+    skygrid = SkyGrid(search_config['skygrid_resolution'])
+    response = GbmResponse(phaiis.items, skygrid, 'templates/GBM', spacecraft_frames, ttes.get_item("n0").trigtime, templates=[0, 1, 2])
 
-    atmoscat = 0
-    az, zen = utils.get_geo_coordinates(spacecraft_frames.at(trigtime), unit='deg')[:2]
-    if 125.0 < zen and zen < 135.0:
-        # add atmospheric scattering component
-        atmoscat = 1
-        allowed_az = np.arange(0, 361, 5)
-        closest = allowed_az[np.fabs(allowed_az - az).argmin()] % 360
-        atmo_path = os.path.join(basedir, f'templates/GBM/atmo_nai/atmrates_az{closest}_zen130.npy')
-        response += gts.loadResponse(atmo_path, **kwargs)
+    print("initializing search")
+    search = TargetedSearch(search_config, skygrid)
+    search.add_instrument('gbm', phaiis, backfitters, goodness_of_fit, response)
+
+    snr_channels = gbm_config.select_channels({det.name: [3, 4] for det in GbmDetectors.nai()})
+    search.add_calculation([("snr1", "<f8"), ("snr0", "<f8")], calculate_top_snr, instrument="gbm", channels=snr_channels, n=2)
+
+    pe_channels = gbm_config.select_channels({det.name: [0, 1] for det in GbmDetectors.nai()})
+    search.add_calculation([("pe0", "<f8"), ("pe1", "<f8"), ("pe2", "<f8")], calculate_pe_variables, instrument="gbm", channels=pe_channels)
+
+    search.add_calculation([("in_rock", "<i8")], lambda search, result: search.instrument_data['gbm'].response.in_rock)
+
+    search.add_calculation([(f"marginal_flux{i}", "<f8") for i in range(3)] +
+                           [(f"marginal_flux_sig{i}", "<f8") for i in range(3)], calculate_marginal_flux, durations=[1.024])
 
     print("running the search")
-    # Run the search
-    search = gts.runSearch(data, response, spacecraft_frames, t0=trigtime,
-                           background_range=time_range, skymap=args.skymap, settings=settings,
-                           results_dir=args.results_dir)
+    timebins = search.get_timebins()
+    response.preprocess(timebins)
+    results = search.run(timebins)
 
+    # append common coordinate transformations
+    frames = search.instrument_data['gbm'].response._preprocessed['frames']
+
+    coordinate_max = SkyCoord(results['az'], 0.5 * np.pi - results['zen'], frame=frames, unit='rad')
+    coordinate_sun = get_sun(Time(results['tstart'] + 0.5 * results['duration'], format='fermi'))
+
+    results.append_fields(
+        ["ra", "dec", "sun_angle", "geo_angle"],
+        [coordinate_max.icrs.ra.radian,
+         coordinate_max.icrs.dec.radian,
+         coordinate_sun.separation(coordinate_max).radian,
+         frames.geocenter.separation(coordinate_max).radian]
+    )
+
+    exit(0)
     # filter results to produce up to 3 top candidates
     filtered_results = search['results'].remove_pe()
     filtered_results = filtered_results.downselect(threshold=settings['min_loglr'], no_empty=True)
@@ -241,11 +257,11 @@ def main():
 
     print('\nOrbital plot...')
     orbit_filename = os.path.join(args.results_dir, 'Orbit.png')
-    plots.plot_orbit(spacecraft_frames, trigtime, orbit_filename, GbmSaa())
+    plot_orbit(spacecraft_frames, trigtime, orbit_filename, GbmSaa())
     print('Done.')
 
     print('\nWaterfall plots...')
-    w = plots.Waterfall(search['results'], trigtime)
+    w = Waterfall(search['results'], trigtime)
     loglr_filename = os.path.join(args.results_dir, 'Loglr.png')
     w.plot_loglr(loglr_filename, val_min=3.0)
     loglr_spec_filename = os.path.join(args.results_dir, 'Loglr_spec.png')
@@ -253,7 +269,7 @@ def main():
     print('Done.')
 
     print('\nLight curve plots...')
-    lcplotter = plots.TargetedLightcurves(search['data'], search['background'], trigtime)
+    lcplotter = TargetedLightcurves(search['data'], search['background'], trigtime)
     lc_detectors_filename = os.path.join(args.results_dir, 'Event{}_lightcurve_detectors.png')
     lc_summed_filename = os.path.join(args.results_dir, 'Event{}_lightcurve_summed.png')
     lc_channel_filename = os.path.join(args.results_dir, 'Event{}_lightcurve_channels.png')
