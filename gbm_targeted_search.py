@@ -235,7 +235,7 @@ def main():
     coordinate_sun = get_sun(Time(results['tstart'] + 0.5 * results['duration'], format='fermi'))
 
     results.append_fields(
-        ["ra", "dec", "sun_angle", "geo_angle"],
+        ["ra", "dec", "sun_angle", "earth_angle"],
         [coordinate_max.icrs.ra.radian,
          coordinate_max.icrs.dec.radian,
          coordinate_sun.separation(coordinate_max, origin_mismatch="ignore").radian,
@@ -245,7 +245,7 @@ def main():
 
     print(results['tstart'][0], results['duration'][0])
     print(np.degrees(results['sun_angle'][0]))
-    print(np.degrees(results['geo_angle'][0]))
+    print(np.degrees(results['earth_angle'][0]))
     print(results[0])
     print(results.time_ref)
 
@@ -273,12 +273,16 @@ def main():
     print(
         "--------------------------------------------------------------------------------------------------------------------------------------------------\n")
     print('')
-    keys = ['duration', 'in_gti', 'in_rock', 'like_status', 'az', 'zen', 'ra', 'dec', 'template', 'like_snr', 'snr0', 'snr1',
-             'reduced_chisq', 'chisqplusdof', 'sun_angle', 'geo_angle', 'loglr', 'loglr', 'pe0', 'pe1', 'pe2']
+    """
     for entry in filtered_results:
-        values = [entry['tstart'] + 0.5 * entry['duration']] + [entry[key] for key in keys]
+        values = (
+            entry['tstart'] + 0.5 * entry['duration'], entry['in_gti'], entry['in_rock'], entry['like_status'],
+            *np.degrees([entry['az'], entry['zen'], entry['ra'], entry['dec']), entry['template'], entry['flux_amplitude'],
+            entry['like_snr'], entry['snr0'], entry['snr1'], entry['reduced_chisq'], entry['chisqplusdof'],
+            *np.degrees([entry['sun_angle'], entry['earth_angle'])], entry['loglr'], entry['loglr'], entry['pe0'], entry['pe1'], entry['pe2'])
         print(
             "%13.3f %7.3f %3d %4d %4d  %5.1f %5.1f %5.1f %5.1f %1d %5.2f %5.1f %5.1f %5.1f %5.1f %5.1f %5.1f %5.1f %8.2f %8.2f %5.1f %5.1f %5.1f\n" % values)
+    """
 
 
     print('\nCreating the following plots:')
