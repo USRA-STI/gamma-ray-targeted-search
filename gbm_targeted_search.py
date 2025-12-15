@@ -57,7 +57,7 @@ from plots import TargetedLightcurves, Waterfall, plot_orbit
 from skymap import O3_DGAUSS_Model, LigoHealPix
 from search import TargetedSearch
 from results import Results, calculate_top_snr, calculate_pe_variables, calculate_marginal_flux
-from filters import remove_pe
+from filters import remove_pe, remove_dur_spec, downselect
 from response import GbmResponse
 from configuration import InstrumentConfiguration, SearchConfiguration
 
@@ -249,11 +249,11 @@ def main():
 
     # filter results to produce up to 3 top candidates
     filtered_results = remove_pe(results)
-    exit(0)
-    filtered_results = filtered_results.downselect(threshold=settings['min_loglr'], no_empty=True)
-    filtered_results = filtered_results.downselect(combine_spec=False, fixedwin=settings['win_width'])
-    filtered_results.remove_dur_spec(8.192, 'soft')
+    filtered_results = downselect(filtered_results, threshold=search_config['min_loglr'], no_empty=True)
+    filtered_results = downselect(filtered_results, combine_spec=False, fixedwin=search_config['win_width'])
+    filtered_results = remove_dur_spec(filtered_results, 8.192, 2)
     filtered_results.save(args.results_dir, 'filtered_results.npz')
+    exit(0)
 
     # report the results
     print('\nFound the following {} candidates:'.format(filtered_results.size))

@@ -63,7 +63,7 @@ def remove_dur_spec(results, dur, spec):
     Args:
         results (Results): The Results object to filter.
         dur (float): The duration in seconds to remove
-        spec (int): Index of the spectral template to remove
+        spec (int, str): Index or name of the spectral template to remove
 
     Returns:
         (Results): A new Results object without the duration + spectral template.
@@ -71,7 +71,10 @@ def remove_dur_spec(results, dur, spec):
     if results.size == 0:
         return results
 
-    mask = (results['durations'] == dur) & (results['templates'] == spec)
+    if not isinstance(spec, int):
+        spec = list(results.template_names).index(spec)
+
+    mask = (results['duration'] == dur) & (results['template'] == spec)
 
     return Results.create(results.data[~mask], time_ref=results.time_ref, template_names=results.template_names)
 
@@ -135,18 +138,18 @@ def downselect(results, overlap_factor=0.2, threshold=None, combine_spec=True,
     for e1 in sorted_events:
         keep = True
         for e2 in unique_events:
-            toverlap = min(e1['time'] + e1['duration'] / 2.0, e2['time'] + e2['duration'] / 2.0) \
-                       - max(e1['time'] - e1['duration'] / 2.0, e2['time'] - e2['duration'] / 2.0) + fixedwin
+            toverlap = min(e1['tstart'] + e1['duration'], e2['tstart'] + e2['duration']) \
+                       - max(e1['tstart'], e2['tstart']) + fixedwin
             
             if (combine_spec or (e2['template'] == e1['template'])) and (toverlap > 0):
-                amplitude = e1['snr_0'] / np.sqrt(e1['duration'])
+                amplitude = e1['snr0'] / np.sqrt(e1['duration'])
                 snr_expected = amplitude * toverlap / np.sqrt(e2['duration'])
-                if e2['snr_0'] * overlap_factor < snr_expected:
+                if e2['snr0'] * overlap_factor < snr_expected:
                     keep = False
                     break
         if keep:
             unique_events.append(e1)
     
-    data = np.array(unique_events, dtype=results.dtype)
+    data = np.array(unique_events, dtype=results.data.dtype)
 
     return Results.create(data, time_ref=results.time_ref, template_names=results.template_names)
