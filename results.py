@@ -151,6 +151,8 @@ class Results:
         ('duration', 'f8'),
         ('az', 'f8'),
         ('zen', 'f8'),
+        ('like_status', 'i4'),
+        ('like_snr', 'f8'),
         ('template', 'i4'),
         ('flux_amplitude', 'f8'),
         ('reduced_chisq', 'f8'),
@@ -208,7 +210,7 @@ class Results:
         names = [name for name in file.keys() if name not in ['time_ref', 'template_names']]
         n = len(file[names[0]])
 
-        obj = cls.create(n,  time_ref=file['time_ref'], template_names=file["template_names"])
+        obj = cls(n,  time_ref=file['time_ref'], template_names=file["template_names"])
 
         # fill required fields
         for name, t in obj.required_dtype:

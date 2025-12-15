@@ -212,7 +212,7 @@ class TargetedSearch():
         self.like_points = self.skygrid._points[:, sky_mask_matrix]
         self.like_frame = reference_frame
 
-    def run(self, timebins, time_ref=None, sky_mask=True):
+    def run(self, timebins, time_ref=0.0, sky_mask=True):
         """Run the search over a set of timebins.
 
         Args:
@@ -236,9 +236,9 @@ class TargetedSearch():
 
             # store required result fields
             results.data[i] = (
-                tstart, duration, az_max, zen_max, self.like.max_template,
-                self.like.photon_fluence/duration, *self.like.chisq,
-                self.like.marginal_llr)
+                tstart, duration, az_max, zen_max, self.like.status, self.like.optimal_snr,
+                self.like.max_template, self.like.photon_fluence/duration,
+                *self.like.chisq, self.like.marginal_llr)
 
             # build user calculated fields
             for calc in self._calculations:

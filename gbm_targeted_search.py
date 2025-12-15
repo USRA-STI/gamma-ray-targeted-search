@@ -241,24 +241,45 @@ def main():
          coordinate_sun.separation(coordinate_max, origin_mismatch="ignore").radian,
          frames.geocenter.separation(coordinate_max, origin_mismatch="ignore").radian]
     )
+    results.append_fields(["in_gti"], [np.ones(results.size, dtype=int)])
 
     print(results['tstart'][0], results['duration'][0])
     print(np.degrees(results['sun_angle'][0]))
     print(np.degrees(results['geo_angle'][0]))
     print(results[0])
+    print(results.time_ref)
 
     # filter results to produce up to 3 top candidates
     filtered_results = remove_pe(results)
     filtered_results = downselect(filtered_results, threshold=search_config['min_loglr'], no_empty=True)
     filtered_results = downselect(filtered_results, combine_spec=False, fixedwin=search_config['win_width'])
     filtered_results = remove_dur_spec(filtered_results, 8.192, 2)
+    print(filtered_results.time_ref)
     filtered_results.save(args.results_dir, 'filtered_results.npz')
+
     exit(0)
+    # TO DO ADD coinclr calc
 
     # report the results
     print('\nFound the following {} candidates:'.format(filtered_results.size))
-    filtered_results.write()
+    print('Total number of bins: {}\n'.format(filtered_results.size))
+    print('In GTI: {}\n'.format(np.sum(filtered_results['in_gti'])))
+    print('Used atmoscat: {}\n'.format(np.sum(results['in_rock'])))
+    print('Pre-filtered: {}\n'.format(np.sum(results['like_status'] == 2)))
+    print(
+        "--------------------------------------------------------------------------------------------------------------------------------------------------\n")
+    print(
+        "    tcent    duration  gti rock good  az  zen  ra  dec  spec ampli  snr  snr0  snr1 chisq chisq+ sun  earth    logLR   coincLR  PE0   PE1   PE2\n")
+    print(
+        "--------------------------------------------------------------------------------------------------------------------------------------------------\n")
     print('')
+    keys = ['duration', 'in_gti', 'in_rock', 'like_status', 'az', 'zen', 'ra', 'dec', 'template', 'like_snr', 'snr0', 'snr1',
+             'reduced_chisq', 'chisqplusdof', 'sun_angle', 'geo_angle', 'loglr', 'loglr', 'pe0', 'pe1', 'pe2']
+    for entry in filtered_results:
+        values = [entry['tstart'] + 0.5 * entry['duration']] + [entry[key] for key in keys]
+        print(
+            "%13.3f %7.3f %3d %4d %4d  %5.1f %5.1f %5.1f %5.1f %1d %5.2f %5.1f %5.1f %5.1f %5.1f %5.1f %5.1f %5.1f %8.2f %8.2f %5.1f %5.1f %5.1f\n" % values)
+
 
     print('\nCreating the following plots:')
 
