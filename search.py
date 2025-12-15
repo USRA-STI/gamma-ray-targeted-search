@@ -224,7 +224,7 @@ class TargetedSearch():
             (Results): A Results object with the likelihood result + user calculated fields for each timebin.
         """
         # prepare results arrays
-        results = Results.create(len(timebins), time_ref=time_ref)
+        results = Results(len(timebins), time_ref=time_ref)
         [calc['results'].resize(len(timebins)) for calc in self._calculations]
 
         for i, (tstart, duration) in enumerate(timebins):

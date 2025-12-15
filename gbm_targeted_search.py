@@ -57,6 +57,7 @@ from plots import TargetedLightcurves, Waterfall, plot_orbit
 from skymap import O3_DGAUSS_Model, LigoHealPix
 from search import TargetedSearch
 from results import Results, calculate_top_snr, calculate_pe_variables, calculate_marginal_flux
+from filters import remove_pe
 from response import GbmResponse
 from configuration import InstrumentConfiguration, SearchConfiguration
 
@@ -166,7 +167,8 @@ def main():
     search_config.settings.update({
          'win_width': args.search_window_width,
          'min_loglr': 5,
-         'min_dur': args.min_dur, 'max_dur': args.max_dur,
+         #'min_dur': args.min_dur, 'max_dur': args.max_dur,
+         'min_dur': 1.024, 'max_dur': 1.024,
          'min_step': args.min_step,'num_steps': args.num_steps,
          'bkgd_range': [-500, 500], 'bkgd_window': 125.0,
          'data_range': np.array([-0.5, 0.5]) * (args.search_window_width + args.max_dur)})
@@ -236,13 +238,18 @@ def main():
         ["ra", "dec", "sun_angle", "geo_angle"],
         [coordinate_max.icrs.ra.radian,
          coordinate_max.icrs.dec.radian,
-         coordinate_sun.separation(coordinate_max).radian,
-         frames.geocenter.separation(coordinate_max).radian]
+         coordinate_sun.separation(coordinate_max, origin_mismatch="ignore").radian,
+         frames.geocenter.separation(coordinate_max, origin_mismatch="ignore").radian]
     )
 
-    exit(0)
+    print(results['tstart'][0], results['duration'][0])
+    print(np.degrees(results['sun_angle'][0]))
+    print(np.degrees(results['geo_angle'][0]))
+    print(results[0])
+
     # filter results to produce up to 3 top candidates
-    filtered_results = search['results'].remove_pe()
+    filtered_results = remove_pe(results)
+    exit(0)
     filtered_results = filtered_results.downselect(threshold=settings['min_loglr'], no_empty=True)
     filtered_results = filtered_results.downselect(combine_spec=False, fixedwin=settings['win_width'])
     filtered_results.remove_dur_spec(8.192, 'soft')

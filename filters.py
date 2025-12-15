@@ -34,6 +34,8 @@
 #
 import numpy as np
 
+from results import Results
+
 def remove_pe(results, cr1=5, cr2=1, cr2thr=8):
     """Apply phosphorescence event (pe) veto and return a new Results object with the veto applied.
     
@@ -49,9 +51,9 @@ def remove_pe(results, cr1=5, cr2=1, cr2thr=8):
     if results.size == 0:
         return results
 
-    icr1 = results['pe_0'] / np.maximum(0.1, results['pe_1']) < cr1
-    icr2 = (results['pe_0'] / np.maximum(0.1, results['pe_2']) < cr2) | \
-           (results['pe_0'] < cr2thr)
+    icr1 = results['pe0'] / np.maximum(0.1, results['pe1']) < cr1
+    icr2 = (results['pe0'] / np.maximum(0.1, results['pe2']) < cr2) | \
+           (results['pe0'] < cr2thr)
 
     return Results.create(results.data[(icr1 & icr2)], time_ref=results.time_ref, template_names=results.template_names)
 

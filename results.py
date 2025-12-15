@@ -156,25 +156,19 @@ class Results:
         ('reduced_chisq', 'f8'),
         ('chiplusdof', 'f8'),
         ('loglr', 'f8'),
-        #('coinclr', 'f8'),
-        #('in_gti', 'bool'), # optional
-        #('atmoscat', 'bool'), #optional
-        #('flags', 'i4'), # make i8 and optional
-        #('snr_0', 'f8'), #optional
-        #('snr_1', 'f8'), #optional
-        #('snr_2', 'f8'), #optional
-        #('sun_angle', 'f8'), # Optional
-        #('geo_angle', 'f8'), # Optional
-        #('pe_0', 'f8'),#optional
-        #('pe_1', 'f8'),#optional
-        #('pe_2', 'f8'),#optional
     ]
 
-    def __init__(self):
-        """Class constructor"""
-        self.data = np.empty(0, dtype=self.required_dtype)
-        self.time_ref = 0.0
-        self.template_names = np.array([])
+    def __init__(self, size=0, time_ref=0.0, template_names=None):
+        """Class constructor
+
+        Args:
+            size (int): Array size
+            time_ref (float): Reference time
+            template_names (list|np.ndarray): List of spectral template names
+        """
+        self.data = np.empty(size, dtype=self.required_dtype)
+        self.time_ref = time_ref
+        self.template_names = np.array(template_names) if template_names is not None else np.array([])
 
     @property
     def size(self):
@@ -190,11 +184,25 @@ class Results:
         return self.data[key]
 
     def save(self, directory, filename=None):
+        """Save Results object to file
+
+        Args:
+            directory (str): Directory path
+            filename (str): File name
+        """
         np.savez(os.path.join(directory, filename), time_ref=self.time_ref,
                  template_names=self.template_names, **{key: self.data[key] for key in self.data.dtype.names}) 
 
     @classmethod
     def open(cls, filename):
+        """Open file containing Results object
+
+        Args:
+            filename (str): File name (full path)
+
+        Returns:
+            (Results)
+        """
         file = np.load(filename)
 
         names = [name for name in file.keys() if name not in ['time_ref', 'template_names']]
@@ -216,17 +224,39 @@ class Results:
         return obj        
 
     @classmethod
-    def create(cls, size, time_ref=0.0, template_names=None):
-        obj = cls()
-        obj.data = np.empty(size, dtype=obj.required_dtype)
-        obj.time_ref = time_ref
-        obj.template_names = np.array([]) if template_names is None else np.array(template_names)
+    def create(cls, data, time_ref=0.0, template_names=None):
+        """Create Results object from data array
+
+        Args:
+            data (np.ndarray: Data array with dtype names
+            time_ref (float): Reference time
+            template_names (list|np.ndarray): List of spectral template names
+
+        Returns:
+            (Results)
+        """
+        obj = cls(time_ref=time_ref, template_names=template_names)
+        for name, t in obj.required_dtype:
+            if name not in data.dtype.names:
+                raise KeyError(f"Data is missing required key '{name}'")
+        obj.data = data
         return obj
 
     def append_fields(self, names, data):
+        """Append individual field names and data
+
+        Args:
+            names (list): List with names of new fields
+            data (list): List with [data1, data2, ...] for each new field
+        """
         self.data = numpy.lib.recfunctions.append_fields(self.data, names, data)
 
     def append_arrays(self, arrays):
+        """Append array with dtypes to data
+
+        Args:
+            arrays (np.ndarray, list[np.ndarray]): Array or list with structured numpy arrays
+        """
         if not isinstance(arrays, list):
             arrays = [arrays]
         self.data = numpy.lib.recfunctions.merge_arrays([self.data] + arrays, flatten=True)
