@@ -263,6 +263,31 @@ class Results:
             arrays = [arrays]
         self.data = numpy.lib.recfunctions.merge_arrays([self.data] + arrays, flatten=True)
 
+    def to_list(self, keys, units=None):
+        """Convert to list format. Useful for printing a subset of keys.
+
+        Args:
+            keys (list[str]): List of key names to include
+            units (dict): Dictionary with units to apply to specific keys
+
+        Returns:
+            (list)
+        """
+        if units is None:
+            units = {}
+
+        l = []
+        for entry in self:
+            values = []
+            for key in keys:
+                value = entry[key]
+                if key in units:
+                    value *= units[key]
+                values.append(value)
+            l.append(values)
+
+        return l
+
 
 # TODO: Review FalseAlarmRate to check for API changes
 class FalseAlarmRate():

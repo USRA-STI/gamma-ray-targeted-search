@@ -232,7 +232,7 @@ def main():
     frames = search.instrument_data['gbm'].response._preprocessed['frames']
 
     coordinate_max = SkyCoord(results['az'], 0.5 * np.pi - results['zen'], frame=frames, unit='rad')
-    coordinate_sun = get_sun(Time(results['tstart'] + 0.5 * results['duration'], format='fermi'))
+    coordinate_sun = get_sun(Time(trigtime, format='fermi')) # TODO: use central time of bin instead of trigtime
 
     results.append_fields(
         ["ra", "dec", "sun_angle", "earth_angle"],
@@ -243,36 +243,37 @@ def main():
     )
     results.append_fields(["in_gti"], [np.ones(results.size, dtype=int)])
 
-    print(results['tstart'][0], results['duration'][0])
-    print(np.degrees(results['sun_angle'][0]))
-    print(np.degrees(results['earth_angle'][0]))
-    print(results[0])
-    print(results.time_ref)
-
     # filter results to produce up to 3 top candidates
     filtered_results = remove_pe(results)
     filtered_results = downselect(filtered_results, threshold=search_config['min_loglr'], no_empty=True)
     filtered_results = downselect(filtered_results, combine_spec=False, fixedwin=search_config['win_width'])
     filtered_results = remove_dur_spec(filtered_results, 8.192, 2)
-    print(filtered_results.time_ref)
     filtered_results.save(args.results_dir, 'filtered_results.npz')
 
-    exit(0)
     # TO DO ADD coinclr calc
 
     # report the results
     print('\nFound the following {} candidates:'.format(filtered_results.size))
-    print('Total number of bins: {}\n'.format(filtered_results.size))
-    print('In GTI: {}\n'.format(np.sum(filtered_results['in_gti'])))
-    print('Used atmoscat: {}\n'.format(np.sum(results['in_rock'])))
-    print('Pre-filtered: {}\n'.format(np.sum(results['like_status'] == 2)))
+    print('Total number of bins: {}'.format(filtered_results.size))
+    print('In GTI: {}'.format(np.sum(filtered_results['in_gti'])))
+    print('Used atmoscat: {}'.format(np.sum(filtered_results['in_rock'])))
+    print('Pre-filtered: {}'.format(np.sum(filtered_results['like_status'] == 2)))
     print(
-        "--------------------------------------------------------------------------------------------------------------------------------------------------\n")
+        "--------------------------------------------------------------------------------------------------------------------------------------------------")
     print(
-        "    tcent    duration  gti rock good  az  zen  ra  dec  spec ampli  snr  snr0  snr1 chisq chisq+ sun  earth    logLR   coincLR  PE0   PE1   PE2\n")
+        "    tcent    duration  gti rock good  az   zen   ra    dec  spec ampli snr  snr0  snr1  chisq chisq+ sun earth    logLR  coincLR   PE0   PE1   PE2")
     print(
-        "--------------------------------------------------------------------------------------------------------------------------------------------------\n")
-    print('')
+        "--------------------------------------------------------------------------------------------------------------------------------------------------")
+
+    keys = ['tstart', 'duration', 'in_gti', 'in_rock', 'like_status', 'az', 'zen', 'ra', 'dec', 'template', 'flux_amplitude',
+            'like_snr', 'snr0', 'snr1', 'reduced_chisq', 'chiplusdof', 'sun_angle', 'earth_angle', 'loglr', 'loglr', 'pe0', 'pe1', 'pe2']
+
+    for values in filtered_results.to_list(keys, units={key: np.degrees(1) for key in ['az', 'zen', 'ra', 'dec', 'sun_angle', 'earth_angle']}):
+        values[0] = values[0] + 0.5 * values[1] # convert to tcent
+        print(
+            "%13.3f %7.3f %3d %4d %4d  %5.1f %5.1f %5.1f %5.1f %1d %5.2f %5.1f %5.1f %5.1f %5.1f %5.1f %5.1f %5.1f %8.2f %8.2f %5.1f %5.1f %5.1f" % tuple(values))
+
+    exit(0)
     """
     for entry in filtered_results:
         values = (
