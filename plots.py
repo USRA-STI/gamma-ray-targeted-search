@@ -126,8 +126,8 @@ class Waterfall():
             cmaps (list, optional): For multi-spectra plot, the color maps to use. Default is
                                     ('Purples', 'Blues', 'Greens')
         """        
-        self._results.sort(loglr=True)
-        vals = self._results.loglr
+        self._results.data.sort(order='loglr')
+        vals = self._results['loglr']
         title = 'Marginalized log-likelihood ratio'
         if not spectra:
             self._plot_one(filename, vals, title, **kwargs)
@@ -193,7 +193,7 @@ class Waterfall():
                                     ('Purples', 'Blues', 'Greens')
  
         """
-        spectra = np.unique(self._results.templates) 
+        spectra = np.unique(self._results['template'])
         nspec = spectra.size
 
         if len(cmaps) < nspec:
@@ -204,7 +204,7 @@ class Waterfall():
             cmaps = cmaps[cmap_index]            
         
         # the rectangle dimensions
-        dims = self._rect_dims(self._results.times_relative, self._results.durations)
+        dims = self._rect_dims(self._results['tstart'], self._results['duration'])
         
         if val_max is None:
             val_max = np.nanmax(vals)
@@ -220,7 +220,7 @@ class Waterfall():
         color_fracs = self._scale_color(vals, val_min, val_max, log_color) 
         colors = np.empty((self._results.size, 4))
         for i in range(nspec):
-            mask = (self._results.templates == spectra[i])
+            mask = (self._results['template'] == spectra[i])
             colors[mask] = cmaps[i](color_fracs[mask], alpha=1.0)
 
         # Create the rectangle patch with a specific color
@@ -259,7 +259,7 @@ class Waterfall():
             cmap (str, optional): The color map to use. Default is 'Blues'
         """
         # the rectangle dimensions
-        dims = self._rect_dims(self._results.times_relative, self._results.durations)
+        dims = self._rect_dims(self._results['tstart'], self._results['duration'])
 
         if val_max is None:
             val_max = np.nanmax(vals)
@@ -303,18 +303,19 @@ class Waterfall():
         self._ax = self._fig.gca()
 
         # set the x axis
-        self._ax.set_xlim(np.min(self._results.times_relative), 
-                          np.max(self._results.times_relative))
+        self._ax.set_xlim(np.min(self._results['tstart']),
+                          np.max(self._results['tstart'] + self._results['duration']))
         self._ax.set_xlabel('Time (s) - {}'.format(self._t0), 
                             fontsize=self._fontsize) 
 
+        timescales = np.unique(self._results['duration'])
+
         # Set the ylimits and scale
-        self._ax.set_ylim(self._results.timescales[0]/self._x, 
-                          self._results.timescales[-1]*self._x)
+        self._ax.set_ylim(timescales / self._x, timescales * self._x)
         self._ax.set_yscale('log')
         # Set the yticks and ylabel
-        self._ax.set_yticks(self._results.timescales)
-        self._ax.set_yticklabels(['{:.3f}'.format(t) for t in self._results.timescales])
+        self._ax.set_yticks(timescales)
+        self._ax.set_yticklabels(['{:.3f}'.format(t) for t in timescales])
         self._ax.set_ylabel('Timescale (s)', fontsize=self._fontsize)
 
         # Turn on the minor ticks, but remove them on the y-axis
@@ -322,15 +323,15 @@ class Waterfall():
         self._ax.tick_params(axis='y',which='minor',left='off')
         self._ax.tick_params(axis='y',which='minor',right='off')
      
-    def _rect_dims(self, tcents, durs):
+    def _rect_dims(self, tstarts, durs):
         """ Internal method to set the rectangular dimensions in the plot for each of search bins
 
         Args:
-            tcents (np.ndarray): start time of the search bins
+            tstarts (np.ndarray): start time of the search bins
             durs (np.ndarray): durations of the search bins
         """
-        n = len(tcents)
-        dims = [((tcents[i]-durs[i]/2.0, durs[i]/self._x), durs[i], 
+        n = len(tstarts)
+        dims = [((tstarts[i], durs[i]/self._x), durs[i],
                  durs[i]*(self._x-1.0/self._x)) for i in range(n)]
         return dims
     
@@ -774,7 +775,7 @@ class TargetedLightcurves():
     search_plots:
         Create the full spread of search plots
     """
-    def __init__(self, pha2_data, background_rates, t0, min_res=0.064, lc_color='#394264', 
+    def __init__(self, data, t0, min_res=0.064, lc_color='#394264',
                 bkgd_color='firebrick', selection_color='#9a4e0e', fontsize=12):
         """ Class constructor
 
@@ -796,10 +797,7 @@ class TargetedLightcurves():
         self._axes = None
         self._min_res = min_res
         self.dpi = 150
-        
-        # load up data
-        self._btte = pha2_data
-        self._bkgd = background_rates
+        self.data = data
     
     def plot_detectors(self, time_res, out_file, event_time,
                        time_range=None, **kwargs):

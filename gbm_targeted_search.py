@@ -273,19 +273,6 @@ def main():
         print(
             "%13.3f %7.3f %3d %4d %4d  %5.1f %5.1f %5.1f %5.1f %1d %5.2f %5.1f %5.1f %5.1f %5.1f %5.1f %5.1f %5.1f %8.2f %8.2f %5.1f %5.1f %5.1f" % tuple(values))
 
-    exit(0)
-    """
-    for entry in filtered_results:
-        values = (
-            entry['tstart'] + 0.5 * entry['duration'], entry['in_gti'], entry['in_rock'], entry['like_status'],
-            *np.degrees([entry['az'], entry['zen'], entry['ra'], entry['dec']), entry['template'], entry['flux_amplitude'],
-            entry['like_snr'], entry['snr0'], entry['snr1'], entry['reduced_chisq'], entry['chisqplusdof'],
-            *np.degrees([entry['sun_angle'], entry['earth_angle'])], entry['loglr'], entry['loglr'], entry['pe0'], entry['pe1'], entry['pe2'])
-        print(
-            "%13.3f %7.3f %3d %4d %4d  %5.1f %5.1f %5.1f %5.1f %1d %5.2f %5.1f %5.1f %5.1f %5.1f %5.1f %5.1f %5.1f %8.2f %8.2f %5.1f %5.1f %5.1f\n" % values)
-    """
-
-
     print('\nCreating the following plots:')
 
     print('\nOrbital plot...')
@@ -294,15 +281,16 @@ def main():
     print('Done.')
 
     print('\nWaterfall plots...')
-    w = Waterfall(search['results'], trigtime)
+    w = Waterfall(results, trigtime)
     loglr_filename = os.path.join(args.results_dir, 'Loglr.png')
     w.plot_loglr(loglr_filename, val_min=3.0)
     loglr_spec_filename = os.path.join(args.results_dir, 'Loglr_spec.png')
     w.plot_loglr(loglr_spec_filename, val_min=3.0, spectra=True)
     print('Done.')
+    exit(0)
 
     print('\nLight curve plots...')
-    lcplotter = TargetedLightcurves(search['data'], search['background'], trigtime)
+    lcplotter = TargetedLightcurves(search.instrument_data['gbm'], trigtime)
     lc_detectors_filename = os.path.join(args.results_dir, 'Event{}_lightcurve_detectors.png')
     lc_summed_filename = os.path.join(args.results_dir, 'Event{}_lightcurve_summed.png')
     lc_channel_filename = os.path.join(args.results_dir, 'Event{}_lightcurve_channels.png')
@@ -314,6 +302,7 @@ def main():
         lcplotter.plot_channels(duration, lc_channel_filename.format(i+1), event_time=event_time)
         lcplotter.plot_summed(duration, lc_summed_filename.format(i+1), event_time=event_time)
     print('Done.')
+    exit(0)
 
     print('\nLocalizations...')
     for i in range(filtered_results.size):
