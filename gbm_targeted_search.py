@@ -35,6 +35,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
+from rich.progress import Progress, TextColumn, TaskProgressColumn, TimeRemainingColumn
 from astropy.coordinates import SkyCoord, get_sun
 from gdt.core.plot.sky import EquatorialPlot
 from gdt.core.collection import DataCollection
@@ -60,7 +61,6 @@ from results import Results, calculate_top_snr, calculate_pe_variables, calculat
 from filters import remove_pe, remove_dur_spec, downselect
 from response import GbmResponse
 from configuration import InstrumentConfiguration, SearchConfiguration
-
 
 basedir = os.path.dirname(os.path.abspath(__file__))
 
@@ -133,7 +133,12 @@ def main():
     parser.add_argument("-o", "--results-dir", default=".", type=str, help="Directory for results output")
     parser.add_argument("--flatten", action='store_true', help="Flatten multiorder skymaps.")
     
+    print("\n"  + " ".join(sys.argv) +  "\n")
+
     args = parser.parse_args()
+
+    progress = Progress(TextColumn("[progress.description]{task.description}"),
+                        TaskProgressColumn(), TimeRemainingColumn(elapsed_when_finished=True))
 
     # default behavior
     trigger = args.burst_number
@@ -174,21 +179,26 @@ def main():
 
     trigtime, tte_files, poshist_file = GetData(trigger, gbm_config, "data/gbm")
 
-    print("opening TTE")
+    progress.start()
+    task = progress.add_task("Opening TTE..." , total=len(gbm_config['detectors']))
+
     tte_data = []
     for i, det_config in enumerate(gbm_config['detectors'].values()):
         tte = update_tte_trigtime(GbmTte.open(tte_files[i]), trigtime.value)
         tte = tte.rebin_energy(rebin_by_edge_index, np.array(det_config['channel_edges']))
         tte_data.append(tte)
-
+        progress.update(task, advance=1)
     ttes = DataCollection.from_list(tte_data, names=gbm_config['detector_names'])
 
-    print("binning TTE for search")
+    progress.stop()
+    progress.remove_task(task)
+
+    print("Binning TTE for search...")
     phaiis = DataCollection.from_list(
          ttes.to_phaii(bin_by_time, search_config['time_resolution'], time_ref=0, time_range=search_config['data_range']),
          names=gbm_config['detector_names'])
 
-    print("fitting background")
+    print("Fitting background...")
     backfitters = DataCollection.from_list(
         [BackgroundFitter.from_tte(tte.slice_time(search_config['bkgd_range']), NaivePoisson) for tte in ttes],
         names=gbm_config['detector_names'])
@@ -198,16 +208,16 @@ def main():
         [FitStatus(len(edges) - 1) for det, edges in gbm_config["channel_edges"].items()],
         names=gbm_config['detector_names'])
 
-    print("opening poshist")
+    print("Opening poshist...")
     poshist = GbmPosHist.open(poshist_file)
     spacecraft_frames = poshist.get_spacecraft_frame()
 
-    print("opening the response")
+    print("Opening the response...")
     # Get the response for hard, normal, soft spectral templates
     skygrid = SkyGrid(search_config['skygrid_resolution'])
     response = GbmResponse(phaiis.items, skygrid, 'templates/GBM', spacecraft_frames, ttes.get_item("n0").trigtime, templates=[0, 1, 2])
 
-    print("initializing search")
+    print("Initializing search...")
     search = TargetedSearch(search_config, skygrid)
     search.add_instrument('gbm', phaiis, backfitters, goodness_of_fit, response)
 
@@ -222,10 +232,11 @@ def main():
     search.add_calculation([(f"marginal_flux{i}", "<f8") for i in range(3)] +
                            [(f"marginal_flux_sig{i}", "<f8") for i in range(3)], calculate_marginal_flux, durations=[1.024])
 
-    print("running the search")
     timebins = search.get_timebins()
     response.preprocess(timebins)
-    results = search.run(timebins)
+    progress.start()
+    results = search.run(timebins, progress=progress)
+    progress.stop()
 
     # append common coordinate transformations
     frames = search.instrument_data['gbm'].response._preprocessed['frames']
@@ -252,7 +263,7 @@ def main():
     # TO DO ADD coinclr calc
 
     # report the results
-    print('\nFound the following {} candidates:'.format(filtered_results.size))
+    print('\nFound {} candidates...\n'.format(filtered_results.size))
     print('Total number of bins: {}'.format(filtered_results.size))
     print('In GTI: {}'.format(np.sum(filtered_results['in_gti'])))
     print('Used atmoscat: {}'.format(np.sum(filtered_results['in_rock'])))
@@ -291,11 +302,11 @@ def main():
     nai = list(nai_configs.keys())
     bgo = list(bgo_configs.keys())
     time_range = search_config['search_range']
-    detector_plots = [
-        {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_NaI_Chan1-6.png'), 'detectors': nai, 'channel_range': (1, 6)},
-        {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_NaI_Chan1-2.png'), 'detectors': nai, 'channel_range': (1, 2)},
-        {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_NaI_Chan3-4.png'), 'detectors': nai, 'channel_range': (3, 4)},
-        {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_BGO_Chan1-6.png'), 'detectors': bgo, 'channel_range': (1, 6)},
+    summed_plots = [
+        {'filename': os.path.join(args.results_dir, 'Event{i}_Summed_All_NaI_Chan1-6.png'), 'detectors': nai, 'channel_range': (1, 6)},
+        {'filename': os.path.join(args.results_dir, 'Event{i}_Summed_Right_NaI_Chan3-4.png'), 'detectors': nai[:6], 'channel_range': (3, 4)},
+        {'filename': os.path.join(args.results_dir, 'Event{i}_Summed_Left_NaI_Chan3-4.png'), 'detectors': nai[6:], 'channel_range': (3, 4)},
+        {'filename': os.path.join(args.results_dir, 'Event{i}_Summed_All_BGO_Chan0-3.png'), 'detectors': bgo, 'channel_range': (0, 3)},
     ]
     channel_plots = [
         {'filename': os.path.join(args.results_dir, f'Event{i}_Channel_All_NaI_Chan0-7.png'), 'detectors': nai, 'channel_range': (0, 7)},
@@ -303,15 +314,19 @@ def main():
         {'filename': os.path.join(args.results_dir, f'Event{i}_Channel_Left_NaI_Chan0-7.png'), 'detectors': nai[6:], 'channel_range': (0, 7)},
         {'filename': os.path.join(args.results_dir, f'Event{i}_Channel_All_BGO_Chan0-3.png'), 'detectors': bgo, 'channel_range': (0, 3)},
     ]
+    detector_plots = [
+        {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_NaI_Chan1-6.png'), 'detectors': nai, 'channel_range': (1, 6)},
+        {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_NaI_Chan1-2.png'), 'detectors': nai, 'channel_range': (1, 2)},
+        {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_NaI_Chan3-4.png'), 'detectors': nai, 'channel_range': (3, 4)},
+        {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_BGO_Chan1-6.png'), 'detectors': bgo, 'channel_range': (1, 6)},
+    ]
     lcplotter = TargetedLightcurves(search.instrument_data['gbm'], trigtime)
     for i in range(filtered_results.size):
         print('Light curves for Event {}.'.format(i+1))
         duration, tstart = filtered_results['duration'][i], filtered_results['tstart'][i]
-        [lcplotter.plot_detectors(duration, time_range=time_range, event_time=tstart, **kwargs) for kwargs in detector_plots]
+        [lcplotter.plot_summed(duration, time_range=time_range, event_time=tstart, **kwargs) for kwargs in summed_plots]
         [lcplotter.plot_channels(duration, time_range=time_range, event_time=tstart, **kwargs) for kwargs in channel_plots]
-        #filename = os.path.join(args.results_dir, f'Event{i}_Detector_All_NaI_Chan1-6.png')
-        #lcplotter.plot_channels(duration, lc_channel_filename.format(i+1), event_time=tstart, detectors=list(nai_configs.keys()))
-        #lcplotter.plot_summed(duration, lc_summed_filename.format(i+1), event_time=tstart, detectors=list(nai_configs.keys()))
+        [lcplotter.plot_detectors(duration, time_range=time_range, event_time=tstart, **kwargs) for kwargs in detector_plots]
     print('Done.')
     exit(0)
 

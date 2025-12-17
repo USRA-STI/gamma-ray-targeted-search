@@ -27,8 +27,9 @@
 import time
 import numpy as np
 
-from gdt.core.data_primitives import TimeEnergyBins
+from rich.progress import track
 from astropy.coordinates import SkyCoord
+from gdt.core.data_primitives import TimeEnergyBins
 
 from likelihood import Likelihood
 from data import InstrumentData
@@ -212,7 +213,7 @@ class TargetedSearch():
         self.like_points = self.skygrid._points[:, sky_mask_matrix]
         self.like_frame = reference_frame
 
-    def run(self, timebins, time_ref=0.0, sky_mask=True):
+    def run(self, timebins, time_ref=0.0, sky_mask=True, progress=None):
         """Run the search over a set of timebins.
 
         Args:
@@ -226,6 +227,8 @@ class TargetedSearch():
         # prepare results arrays
         results = Results(len(timebins), time_ref=time_ref)
         [calc['results'].resize(len(timebins)) for calc in self._calculations]
+
+        task = progress.add_task("Searching...", total=len(timebins)) if progress else None
 
         for i, (tstart, duration) in enumerate(timebins):
             # compute the likelihood for this timebin
@@ -243,6 +246,9 @@ class TargetedSearch():
             # build user calculated fields
             for calc in self._calculations:
                 calc['results'][i] = calc['method'](self, results.data[i], *calc['args'], **calc['kwargs'])
+
+            if progress:
+                progress.update(task, advance=1)
 
         # combine required + user calculated results into a single array
         if len(self._calculations):
