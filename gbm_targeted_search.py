@@ -302,33 +302,26 @@ def main():
     nai = list(nai_configs.keys())
     bgo = list(bgo_configs.keys())
     time_range = search_config['search_range']
-    summed_plots = [
-        {'filename': os.path.join(args.results_dir, 'Event{i}_Summed_All_NaI_Chan1-6.png'), 'detectors': nai, 'channel_range': (1, 6)},
-        {'filename': os.path.join(args.results_dir, 'Event{i}_Summed_Right_NaI_Chan3-4.png'), 'detectors': nai[:6], 'channel_range': (3, 4)},
-        {'filename': os.path.join(args.results_dir, 'Event{i}_Summed_Left_NaI_Chan3-4.png'), 'detectors': nai[6:], 'channel_range': (3, 4)},
-        {'filename': os.path.join(args.results_dir, 'Event{i}_Summed_All_BGO_Chan0-3.png'), 'detectors': bgo, 'channel_range': (0, 3)},
-    ]
-    channel_plots = [
-        {'filename': os.path.join(args.results_dir, f'Event{i}_Channel_All_NaI_Chan0-7.png'), 'detectors': nai, 'channel_range': (0, 7)},
-        {'filename': os.path.join(args.results_dir, f'Event{i}_Channel_Right_NaI_Chan0-7.png'), 'detectors': nai[:6], 'channel_range': (0, 7)},
-        {'filename': os.path.join(args.results_dir, f'Event{i}_Channel_Left_NaI_Chan0-7.png'), 'detectors': nai[6:], 'channel_range': (0, 7)},
-        {'filename': os.path.join(args.results_dir, f'Event{i}_Channel_All_BGO_Chan0-3.png'), 'detectors': bgo, 'channel_range': (0, 3)},
-    ]
-    detector_plots = [
-        {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_NaI_Chan1-6.png'), 'detectors': nai, 'channel_range': (1, 6)},
-        {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_NaI_Chan1-2.png'), 'detectors': nai, 'channel_range': (1, 2)},
-        {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_NaI_Chan3-4.png'), 'detectors': nai, 'channel_range': (3, 4)},
-        {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_BGO_Chan1-6.png'), 'detectors': bgo, 'channel_range': (1, 6)},
-    ]
     lcplotter = TargetedLightcurves(search.instrument_data['gbm'], trigtime)
     for i in range(filtered_results.size):
         print('Light curves for Event {}.'.format(i+1))
         duration, tstart = filtered_results['duration'][i], filtered_results['tstart'][i]
-        [lcplotter.plot_summed(duration, time_range=time_range, event_time=tstart, **kwargs) for kwargs in summed_plots]
-        [lcplotter.plot_channels(duration, time_range=time_range, event_time=tstart, **kwargs) for kwargs in channel_plots]
-        [lcplotter.plot_detectors(duration, time_range=time_range, event_time=tstart, **kwargs) for kwargs in detector_plots]
+        [lcplotter.plot_summed(duration, time_range=time_range, event_time=tstart, **kwargs) for kwargs in [
+            {'filename': os.path.join(args.results_dir, f'Event{i}_Summed_All_NaI_Chan1-6.png'), 'detectors': nai, 'channel_range': (1, 6)},
+            {'filename': os.path.join(args.results_dir, f'Event{i}_Summed_Right_NaI_Chan3-4.png'), 'detectors': nai[:6], 'channel_range': (3, 4)},
+            {'filename': os.path.join(args.results_dir, f'Event{i}_Summed_Left_NaI_Chan3-4.png'), 'detectors': nai[6:], 'channel_range': (3, 4)},
+            {'filename': os.path.join(args.results_dir, f'Event{i}_Summed_All_BGO_Chan0-3.png'), 'detectors': bgo, 'channel_range': (0, 3)}]]
+        [lcplotter.plot_channels(duration, time_range=time_range, event_time=tstart, **kwargs) for kwargs in [
+            {'filename': os.path.join(args.results_dir, f'Event{i}_Channel_All_NaI_Chan0-7.png'), 'detectors': nai, 'channel_range': (0, 7)},
+            {'filename': os.path.join(args.results_dir, f'Event{i}_Channel_Right_NaI_Chan0-7.png'), 'detectors': nai[:6], 'channel_range': (0, 7)},
+            {'filename': os.path.join(args.results_dir, f'Event{i}_Channel_Left_NaI_Chan0-7.png'), 'detectors': nai[6:], 'channel_range': (0, 7)},
+            {'filename': os.path.join(args.results_dir, f'Event{i}_Channel_All_BGO_Chan0-3.png'), 'detectors': bgo, 'channel_range': (0, 3)}]]
+        [lcplotter.plot_detectors(duration, time_range=time_range, event_time=tstart, **kwargs) for kwargs in [
+            {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_NaI_Chan1-6.png'), 'detectors': nai, 'channel_range': (1, 6)},
+            {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_NaI_Chan1-2.png'), 'detectors': nai, 'channel_range': (1, 2)},
+            {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_NaI_Chan3-4.png'), 'detectors': nai, 'channel_range': (3, 4)},
+            {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_BGO_Chan1-6.png'), 'detectors': bgo, 'channel_range': (1, 6)}]]
     print('Done.')
-    exit(0)
 
     print('\nLocalizations...')
     for i in range(filtered_results.size):

@@ -311,7 +311,7 @@ class Waterfall():
         timescales = np.unique(self._results['duration'])
 
         # Set the ylimits and scale
-        self._ax.set_ylim(timescales / self._x, timescales * self._x)
+        self._ax.set_ylim(timescales[0] / self._x, timescales[-1] * self._x)
         self._ax.set_yscale('log')
         # Set the yticks and ylabel
         self._ax.set_yticks(timescales)
