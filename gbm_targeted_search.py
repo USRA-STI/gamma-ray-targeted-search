@@ -167,8 +167,7 @@ def main():
     search_config.settings.update({
          'win_width': args.search_window_width,
          'min_loglr': 5,
-         #'min_dur': args.min_dur, 'max_dur': args.max_dur,
-         'min_dur': 1.024, 'max_dur': 1.024,
+         'min_dur': args.min_dur, 'max_dur': args.max_dur,
          'min_step': args.min_step,'num_steps': args.num_steps,
          'bkgd_range': [-500, 500], 'bkgd_window': 125.0,
          'data_range': np.array([-0.5, 0.5]) * (args.search_window_width + args.max_dur)})
@@ -287,20 +286,32 @@ def main():
     loglr_spec_filename = os.path.join(args.results_dir, 'Loglr_spec.png')
     w.plot_loglr(loglr_spec_filename, val_min=3.0, spectra=True)
     print('Done.')
-    exit(0)
 
     print('\nLight curve plots...')
+    nai = list(nai_configs.keys())
+    bgo = list(bgo_configs.keys())
+    time_range = search_config['search_range']
+    detector_plots = [
+        {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_NaI_Chan1-6.png'), 'detectors': nai, 'channel_range': (1, 6)},
+        {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_NaI_Chan1-2.png'), 'detectors': nai, 'channel_range': (1, 2)},
+        {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_NaI_Chan3-4.png'), 'detectors': nai, 'channel_range': (3, 4)},
+        {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_BGO_Chan1-6.png'), 'detectors': bgo, 'channel_range': (1, 6)},
+    ]
+    channel_plots = [
+        {'filename': os.path.join(args.results_dir, f'Event{i}_Channel_All_NaI_Chan0-7.png'), 'detectors': nai, 'channel_range': (0, 7)},
+        {'filename': os.path.join(args.results_dir, f'Event{i}_Channel_Right_NaI_Chan0-7.png'), 'detectors': nai[:6], 'channel_range': (0, 7)},
+        {'filename': os.path.join(args.results_dir, f'Event{i}_Channel_Left_NaI_Chan0-7.png'), 'detectors': nai[6:], 'channel_range': (0, 7)},
+        {'filename': os.path.join(args.results_dir, f'Event{i}_Channel_All_BGO_Chan0-3.png'), 'detectors': bgo, 'channel_range': (0, 3)},
+    ]
     lcplotter = TargetedLightcurves(search.instrument_data['gbm'], trigtime)
-    lc_detectors_filename = os.path.join(args.results_dir, 'Event{}_lightcurve_detectors.png')
-    lc_summed_filename = os.path.join(args.results_dir, 'Event{}_lightcurve_summed.png')
-    lc_channel_filename = os.path.join(args.results_dir, 'Event{}_lightcurve_channels.png')
     for i in range(filtered_results.size):
         print('Light curves for Event {}.'.format(i+1))
-        duration = filtered_results.durations[i]
-        event_time = filtered_results.times[i] - 0.5 * duration
-        lcplotter.plot_detectors(duration, lc_detectors_filename.format(i+1), event_time=event_time)
-        lcplotter.plot_channels(duration, lc_channel_filename.format(i+1), event_time=event_time)
-        lcplotter.plot_summed(duration, lc_summed_filename.format(i+1), event_time=event_time)
+        duration, tstart = filtered_results['duration'][i], filtered_results['tstart'][i]
+        [lcplotter.plot_detectors(duration, time_range=time_range, event_time=tstart, **kwargs) for kwargs in detector_plots]
+        [lcplotter.plot_channels(duration, time_range=time_range, event_time=tstart, **kwargs) for kwargs in channel_plots]
+        #filename = os.path.join(args.results_dir, f'Event{i}_Detector_All_NaI_Chan1-6.png')
+        #lcplotter.plot_channels(duration, lc_channel_filename.format(i+1), event_time=tstart, detectors=list(nai_configs.keys()))
+        #lcplotter.plot_summed(duration, lc_summed_filename.format(i+1), event_time=tstart, detectors=list(nai_configs.keys()))
     print('Done.')
     exit(0)
 

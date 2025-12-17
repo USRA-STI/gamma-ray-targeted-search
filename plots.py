@@ -780,8 +780,7 @@ class TargetedLightcurves():
         """ Class constructor
 
         Args:
-            pha2_data (list): PHAII data for each detector
-            background_rates (list): background rates for each detector
+            data (InstrumentData): PHAII data for each detector
             min_res (float, optional): The minimum resolution of the data. Default is 64 ms
             lc_color (str, optional): The color of the lightcurve. Default is #394264 (a dark blue)
             bkgd_color (str, optional): The color of the background. Default is firebrick.
@@ -797,21 +796,25 @@ class TargetedLightcurves():
         self._axes = None
         self._min_res = min_res
         self.dpi = 150
-        self.data = data
+
+        self._detectors = data.detectors
+        self._btte = [btte for btte in data.data]
+        self._bkgd = [fitter.interpolate_bins(self._btte[0].data.tstart, self._btte[0].data.tstop) for fitter in data.fitters]
     
-    def plot_detectors(self, time_res, out_file, event_time,
-                       time_range=None, **kwargs):
+    def plot_detectors(self, time_res, filename, event_time, time_range=None, detectors=None, **kwargs):
         """Multi-panel plot, each panel showing a detector, summed over channels
 
         Args:
             time_res (float):
                 Time resolution of the lightcurve.
                 Must be a multiple of the resolution of the data
-            out_file (str): The filename to be written to
+            filename (str): The filename to be written to
             event_time (float, optional): The time of an event of interest
             time_range (tuple(2), optional):
                 The time range of the data to be plotted.  If set, this overrides
                 the automatically-determined time range.
+            detectors (list, optional):
+                 A list of detectors to be plotted
             **kwargs:
                 channel_range (tuple(2), optional):
                     The channel range of the data to be plotted
@@ -820,8 +823,14 @@ class TargetedLightcurves():
         """        
         time_range = self._time_bounds(event_time, time_res, time_range)
 
+        if detectors is None:
+            detectors = self._detectors
+
+        btte = [self._btte[self._detectors.index(det)] for det in detectors]
+        bkgd = [self._bkgd[self._detectors.index(det)] for det in detectors]
+
         # initialize figure
-        numdets = len(self._btte)
+        numdets = len(btte)
         self._init_fig(numdets, time_range)
         
         # plot each detector
@@ -833,14 +842,14 @@ class TargetedLightcurves():
         for i in range(numdets):
 
             # rebin the BTTE data, plot the lightcurve and errorbars
-            lc = self._rebin_lc(self._btte[i], time_res, event_time, time_range,
+            lc = self._rebin_lc(btte[i], time_res, event_time, time_range,
                                 **kwargs)
             lcplots[i] = Histo(lc, self._axes[i], color=self._lc_color)
             ebars[i] = HistoErrorbars(lc, self._axes[i], color=self._lc_color,
                                       alpha=0.5)
 
             # integrate the background over the energy range and plot
-            b = self._integrate_bkgd(self._btte[i], self._bkgd[i], time_range=time_range, 
+            b = self._integrate_bkgd(btte[i], bkgd[i], time_range=time_range, 
                                      **kwargs)
             bplots[i] = LightcurveBackground(b, self._axes[i], zorder=1000,
                                              cent_alpha=0.85, err_alpha=0.5, 
@@ -855,40 +864,34 @@ class TargetedLightcurves():
             lc = lc.slice(*time_range)
             self._axes[i].set_ylim(0.8*np.min(lc.rates), 1.2*np.max(lc.rates))
 
-            # Get the detector name or create one if none exists
-            if len(self._btte[i].detector) == 0:
-                detector_name = 'Detector %s' % i
-            else:
-                detector_name = self._btte[i].detector
-
             # Annotate the plot
-            self._annotate(self._axes[i], detector_name, (b.emin[0], b.emax[0]))
+            self._annotate(self._axes[i], detectors[i], (b.emin[0], b.emax[0]))
        
-        if out_file is None:
+        if filename is None:
             plt.show()
             return
 
         # save the figure
         try:
-            plt.savefig(out_file, dpi=self.dpi, bbox_inches='tight')
+            plt.savefig(filename, dpi=self.dpi, bbox_inches='tight')
         except ValueError as err:
             print(err)
         plt.close()
     
-    def plot_channels(self, time_res, out_file, event_time, time_range=None, detector_subset=None, **kwargs):
+    def plot_channels(self, time_res, filename, event_time, time_range=None, detectors=None, **kwargs):
         """Multi-panel plot, each panel showing a channel, summed over detectors
 
         Args:
             time_res (float):
                 Time resolution of the lightcurve.
                 Must be a multiple of the resolution of the data
-            out_file (str): The filename to be written to
+            filename (str): The filename to be written to
             event_time (float, optional): The time of an event of interest
             time_range (tuple(2), optional):
                 The time range of the data to be plotted.  If set, this overrides
                 the automatically-determined time range.
-            detector_subset (list, optional):
-                 A list of indices to select a subset of detectors to be plotted   
+            detectors (list, optional):
+                 A list of detectors to be plotted
             **kwargs:
                 channel_range (tuple(2), optional):
                     The channel range of the data to be plotted
@@ -897,18 +900,16 @@ class TargetedLightcurves():
         """        
         time_range = self._time_bounds(event_time, time_res, time_range)
 
-        btte = self._btte
-        bkgd = self._bkgd
+        if detectors is None:
+            detectors = self._detectors
 
-        # Select a subset of detectors
-        if detector_subset is not None:
-            btte = btte[detector_subset]
-            bkgd = bkgd[detector_subset]
+        btte = [self._btte[self._detectors.index(det)] for det in detectors]
+        bkgd = [self._bkgd[self._detectors.index(det)] for det in detectors]
  
         # initialize figure
         spec = btte[0].to_spectrum(**kwargs)
         numchans = spec.size
-        numdets = len(self._btte)
+        numdets = len(btte)
         chans = spec.centroids
         lo_edges = spec.lo_edges
         hi_edges = spec.hi_edges
@@ -951,22 +952,16 @@ class TargetedLightcurves():
             lc = lc.slice(*time_range)
             self._axes[i].set_ylim(0.8*np.min(lc.rates), 1.2*np.max(lc.rates))
 
-            # Get the detector name or create one if none exists
-            if len(btte[0].detector) == 0:
-                detector_range = 'Detector %s - %s' % (0,numdets-1)
-            else:
-                detector_range = '%s - %s' % (btte[0].detector, btte[-1].detector)
-
             # Annotate the plot
-            self._annotate(self._axes[i], detector_range, (b_channel.emin[0], b_channel.emax[0]))
+            self._annotate(self._axes[i], '%s - %s' % (detectors[0], detectors[-1]), (b_channel.emin[0], b_channel.emax[0]))
         
-        if out_file is None:
+        if filename is None:
             plt.show()
             return
 
         # Save the figure
         try:
-            plt.savefig(out_file, dpi=self.dpi*1.333, bbox_inches='tight')
+            plt.savefig(filename, dpi=self.dpi*1.333, bbox_inches='tight')
         except ValueError as err:
             print(err)
         plt.close()
@@ -1131,19 +1126,21 @@ class TargetedLightcurves():
 
         return sum_bkgd    
 
-    def plot_summed(self, time_res, out_file, event_time,
-                    time_range=None, **kwargs):
+    def plot_summed(self, time_res, filename, event_time,
+                    time_range=None, detectors=None, **kwargs):
         """Single-panel plot, summed over channels and detectors
 
         Args:
             time_res (float):
                 Time resolution of the lightcurve.
                 Must be a multiple of the resolution of the data
-            out_file (str): The filename to be written to
+            filename (str): The filename to be written to
             event_time (float, optional): The time of an event of interest
             time_range (tuple(2), optional):
                 The time range of the data to be plotted.  If set, this overrides
                 the automatically-determined time range.
+            detectors (list, optional):
+                 A list of detectors to be plotted
             **kwargs:
                 channel_range (tuple(2), optional):
                     The channel range of the data to be plotted
@@ -1152,13 +1149,16 @@ class TargetedLightcurves():
         """
         time_range = self._time_bounds(event_time, time_res, time_range)
 
-        btte = self._btte
-        bkgd = self._bkgd
+        if detectors is None:
+            detectors = self._detectors
+
+        btte = [self._btte[self._detectors.index(det)] for det in detectors]
+        bkgd = [self._bkgd[self._detectors.index(det)] for det in detectors]
         
         # initialize figure
         spec = btte[0].to_spectrum(**kwargs)
         numchans = spec.size
-        numdets = len(self._btte)
+        numdets = len(btte)
         chans = spec.centroids
 
         self._init_fig(1, time_range, figsize=(12,6))
@@ -1190,22 +1190,16 @@ class TargetedLightcurves():
         lc = lc.slice(*time_range)
         ax.set_ylim(0.9*np.min(lc.rates), 1.1*np.max(lc.rates))
 
-        # Get the detector name or create one if none exists
-        if len(btte[0].detector) == 0:
-            detector_range = 'Detector %s - %s' % (0,numdets-1)
-        else:
-            detector_range = '%s - %s' % (btte[0].detector, btte[-1].detector)
-
         # Annotate the plot
-        self._annotate(ax, detector_range, (b.emin[0], b.emax[0]), summed_plot=True)
+        self._annotate(ax, "%s - %s" % (detectors[0], detectors[-1]), (b.emin[0], b.emax[0]), summed_plot=True)
 
-        if out_file is None:
+        if filename is None:
             plt.show()
             return
 
         # save the figure
         try:
-            plt.savefig(out_file, dpi=self.dpi, bbox_inches='tight')
+            plt.savefig(filename, dpi=self.dpi, bbox_inches='tight')
         except ValueError as err:
             print(err)
 
