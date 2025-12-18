@@ -795,12 +795,9 @@ class TargetedLightcurves():
         self._fig = None
         self._axes = None
         self._min_res = min_res
+        self._data = data
         self.dpi = 150
 
-        self._detectors = data.detectors
-        self._btte = [btte for btte in data.data]
-        self._bkgd = [fitter.interpolate_bins(self._btte[0].data.tstart, self._btte[0].data.tstop) for fitter in data.fitters]
-    
     def plot_detectors(self, time_res, filename, event_time, time_range=None, detectors=None, **kwargs):
         """Multi-panel plot, each panel showing a detector, summed over channels
 
@@ -824,13 +821,10 @@ class TargetedLightcurves():
         time_range = self._time_bounds(event_time, time_res, time_range)
 
         if detectors is None:
-            detectors = self._detectors
-
-        btte = [self._btte[self._detectors.index(det)] for det in detectors]
-        bkgd = [self._bkgd[self._detectors.index(det)] for det in detectors]
+            detectors = self._data.detectors
 
         # initialize figure
-        numdets = len(btte)
+        numdets = len(detectors)
         self._init_fig(numdets, time_range)
         
         # plot each detector
@@ -841,20 +835,20 @@ class TargetedLightcurves():
 
         for i in range(numdets):
 
-            # rebin the BTTE data, plot the lightcurve and errorbars
-            lc = self._rebin_lc(btte[i], time_res, event_time, time_range,
+            # Rebin the BTTE data, plot the lightcurve and errorbars
+            lc = self._rebin_lc(detectors[i], time_res, event_time, time_range,
                                 **kwargs)
             lcplots[i] = Histo(lc, self._axes[i], color=self._lc_color)
             ebars[i] = HistoErrorbars(lc, self._axes[i], color=self._lc_color,
                                       alpha=0.5)
 
-            # integrate the background over the energy range and plot
-            b = self._integrate_bkgd(btte[i], bkgd[i], time_range=time_range, 
-                                     **kwargs)
+            # Integrate the background over the energy range and plot
+            b = self._integrate_bkgd(detectors[i], lc.lo_edges, lc.hi_edges, **kwargs)
             bplots[i] = LightcurveBackground(b, self._axes[i], zorder=1000,
                                              cent_alpha=0.85, err_alpha=0.5, 
                                              color=self._bkgd_color)
-            # if there is an event time, plot the highlight
+
+            # If there is an event time, plot the highlight
             if event_time is not None:
                 event = (event_time, event_time + time_res)
                 selects[i] = self._axes[i].axvspan(*event, color=self._sel_color, 
@@ -878,7 +872,7 @@ class TargetedLightcurves():
             print(err)
         plt.close()
     
-    def plot_channels(self, time_res, filename, event_time, time_range=None, detectors=None, **kwargs):
+    def plot_channels(self, time_res, filename, event_time, channels, time_range=None, detectors=None):
         """Multi-panel plot, each panel showing a channel, summed over detectors
 
         Args:
@@ -887,32 +881,22 @@ class TargetedLightcurves():
                 Must be a multiple of the resolution of the data
             filename (str): The filename to be written to
             event_time (float, optional): The time of an event of interest
+            channels (list[int|tuple]):
+                List of channels to plot. Format can be [index1, index2... ]
+                or [(emin1, emax1), (emin2, emax2), ....].
             time_range (tuple(2), optional):
                 The time range of the data to be plotted.  If set, this overrides
                 the automatically-determined time range.
             detectors (list, optional):
                  A list of detectors to be plotted
-            **kwargs:
-                channel_range (tuple(2), optional):
-                    The channel range of the data to be plotted
-                energy_range (tuple(2), optional):
-                    The energy range of the data to be plotted
         """        
         time_range = self._time_bounds(event_time, time_res, time_range)
 
         if detectors is None:
-            detectors = self._detectors
-
-        btte = [self._btte[self._detectors.index(det)] for det in detectors]
-        bkgd = [self._bkgd[self._detectors.index(det)] for det in detectors]
+            detectors = self._data.detectors
  
         # initialize figure
-        spec = btte[0].to_spectrum(**kwargs)
-        numchans = spec.size
-        numdets = len(btte)
-        chans = spec.centroids
-        lo_edges = spec.lo_edges
-        hi_edges = spec.hi_edges
+        numchans = len(channels)
         self._init_fig(numchans, time_range)
         
         # plot each channel, summing over detectors
@@ -921,21 +905,23 @@ class TargetedLightcurves():
         bplots = np.empty(numchans, dtype=object)
         selects = np.empty(numchans, dtype=object)
 
-        # Sum the background rates per channel from all the detectors
-        bkgd_summed = self.sum_bkgds(bkgd)
-        
         for i in range(numchans):
 
+            channel = channels[i]
+            kwargs = {'energy_range': channel} if isinstance(channel, tuple) else {'channel_range': (channel, channel)}
+
             # rebin the BTTE data, sum, then plot the lightcurve and errorbars
-            lcs = [self._rebin_lc(one_btte, time_res, event_time, time_range, 
-                   energy_range=(chans[i], chans[i])) for one_btte in btte]
+            lcs = [self._rebin_lc(det, time_res, event_time, time_range, **kwargs)
+                   for det in detectors]
             lc = lcs[0].sum(lcs)
             lcplots[i] = Histo(lc, self._axes[i], color=self._lc_color)
             ebars[i] = HistoErrorbars(lc, self._axes[i], color=self._lc_color,
                                       alpha=0.5)
-            
+
             # Integrate the background over the energy range
-            b_channel = bkgd_summed.integrate_energy(emin=chans[i]+1, emax=chans[i]-1)
+            bkgds = [self._integrate_bkgd(det, lc.lo_edges, lc.hi_edges, **kwargs)
+                     for det in detectors]
+            b_channel = self.sum_bkgds(bkgds)
         
             # Plot the channel specific background
             bplots[i] = LightcurveBackground(b_channel, self._axes[i], zorder=1000,
@@ -1007,12 +993,12 @@ class TargetedLightcurves():
 
         return (event_start - duration * 60.0, event_start + duration * 60.0)
 
-    def _rebin_lc(self, btte, time_res, event_time, time_range, **kwargs):
+    def _rebin_lc(self, detector, time_res, event_time, time_range, **kwargs):
         """ Method to rebin the BTTE data so that it is synced to the resolution and
         phase of the candidate.
 
         Args:
-            btte (PHAII): binned TTE data for a detector
+            detector (str): Detector name to rebin
             time_res (float): duration of the candidate in seconds
             event_time (float): event time of the candidate in seconds
             time_range (tuple(2)): start and stop time used force a specific time range boundary
@@ -1024,6 +1010,7 @@ class TargetedLightcurves():
             event_time = 0
 
         # BTTE resolution
+        btte = self._data.data.get_item(detector)
         btte_res = btte.data.time_widths[1]
 
         # event duration is a multiple of the BTTE resolution
@@ -1051,23 +1038,11 @@ class TargetedLightcurves():
         # slice the BTTE in time and integrate over energy
         lc = btte.to_lightcurve(**kwargs, time_range=(tstart, tstop))
 
-        # Do the rebin. Need padding to account for float rounding
+        # Do the rebin.
         lc = lc.rebin(combine_by_factor, bin_factor, tstart=tstart, tstop=tstop)
 
         return lc
         
-    def _integrate_bkgd(self, btte, bkgd, **kwargs):
-        """ Internal method to integrate the background over energy channels (matching the BTTE
-        channels that are plotted)
-
-        Args:
-            btte (PHAII): binned TTE data for a detector
-            bkgd (BackgroundRates): fitted background rates for a detector
-        """
-        spec = btte.to_spectrum(**kwargs)
-        b = bkgd.integrate_energy(*spec.range)
-        return b
-
     def _annotate(self, ax, det, energy_range, summed_plot=False):
         """ Internal method for annotations of the detector name(s) and energy range shown
 
@@ -1107,24 +1082,24 @@ class TargetedLightcurves():
                 "The backgrounds must all have the same support"
             rates += bkgd.rates
             rates_var += bkgd.rate_uncertainty ** 2
-            
-        ebounds = Ebounds.from_bounds(bkgds[0].emin, bkgds[0].emax)
+
+        # union of energy bounds
+        emin = bkgds[0].emin
+        emax = bkgds[0].emax
         for bkgd in bkgds[1:]:
-            # eb = Ebounds.from_bounds(bkgd.emin, bkgd.emax)
-            # ebounds = Ebounds.merge(ebounds, eb)
-            ebounds = Ebounds.from_bounds(bkgd.emin, bkgd.emax)  # <-- Need to be double checked
+            mask = bkgd.emin < emin
+            emin[mask] = bkgd.emin[mask]
+            mask = bkgd.emax > emax
+            emax[mask] = bkgd.emax[mask]
 
         # averaged exposure, sampling times
         exposure = np.mean([bkgd.exposure for bkgd in bkgds], axis=0)
         tstart = np.mean([bkgd.tstart for bkgd in bkgds], axis=0)
         tstop = np.mean([bkgd.tstop for bkgd in bkgds], axis=0)
-        emin = ebounds.low_edges()
-        emax = ebounds.high_edges()
 
-        sum_bkgd = BackgroundRates(rates, np.sqrt(rates_var), tstart, tstop, emin, emax,
-                       exposure=exposure)
-
-        return sum_bkgd    
+        return BackgroundRates(
+            rates[:, np.newaxis], np.sqrt(rates_var[:, np.newaxis]),
+            tstart, tstop, emin, emax, exposure=exposure)
 
     def plot_summed(self, time_res, filename, event_time,
                     time_range=None, detectors=None, **kwargs):
@@ -1150,38 +1125,27 @@ class TargetedLightcurves():
         time_range = self._time_bounds(event_time, time_res, time_range)
 
         if detectors is None:
-            detectors = self._detectors
+            detectors = self._data.detectors
 
-        btte = [self._btte[self._detectors.index(det)] for det in detectors]
-        bkgd = [self._bkgd[self._detectors.index(det)] for det in detectors]
-        
-        # initialize figure
-        spec = btte[0].to_spectrum(**kwargs)
-        numchans = spec.size
-        numdets = len(btte)
-        chans = spec.centroids
-
+        # Initialize figure
         self._init_fig(1, time_range, figsize=(12,6))
         ax = self._axes[0]
         
-        # rebin the BTTE data, sum, then plot the lightcurve and errorbars
-        lcs = [self._rebin_lc(one_btte, time_res, event_time, time_range, 
-               **kwargs) for one_btte in btte]
+        # Rebin the data, sum, then plot the lightcurve and errorbars
+        lcs = [self._rebin_lc(det, time_res, event_time, time_range, **kwargs)
+               for det in detectors]
         lc = lcs[0].sum(lcs)
         lcplot = Histo(lc, ax, color=self._lc_color)
         ebars = HistoErrorbars(lc, ax, color=self._lc_color, alpha=0.5)
-    
-        # Sum the background rates
-        bkgd_summed = self.sum_bkgds(bkgd)
 
         # Integrate the background over the energy range, sum, and plot
-        b = self._integrate_bkgd(btte[0], bkgd_summed, **kwargs)
-
-        # # Integrate the background over the energy range, sum, and plot
+        bkgds = [self._integrate_bkgd(det, lc.lo_edges, lc.hi_edges, **kwargs)
+                 for det in detectors]
+        b = self.sum_bkgds(bkgds)
         bplot = LightcurveBackground(b, ax, zorder=1000, cent_alpha=0.85, 
                                      err_alpha=0.5, color=self._bkgd_color)                    
 
-        # if there is an event time, plot the highlight
+        # If there is an event time, plot the highlight
         if event_time is not None:
             event = (event_time, event_time + time_res)
             select = ax.axvspan(*event, color=self._sel_color, alpha=0.2)
@@ -1204,3 +1168,34 @@ class TargetedLightcurves():
             print(err)
 
         plt.close()
+
+    def _integrate_bkgd(self, detector, tstart, tstop, channel_range=None, energy_range=None):
+        """Integrate background over time and channel or energy range.
+
+        Args:
+            detector (str): Detector name
+            tstart (np.ndarray): Start time of bins
+            tstop (np.ndarray): Stop time of bins
+            **kwargs:
+                channel_range (tuple(2), optional):
+                    The channel range of the data to be plotted
+                energy_range (tuple(2), optional):
+                    The energy range of the data to be plotted
+
+        Returns:
+            (BackgroundRates)
+        """
+        bkgd = self._data.fitters.get_item(detector).interpolate_bins(tstart, tstop)
+
+        if channel_range is not None:
+            bkgd._assert_range(channel_range)
+
+        if channel_range is not None:
+            energy_range = (bkgd.emin[channel_range[0]],
+                            bkgd.emax[channel_range[1]])
+            if energy_range is not None:
+                emin, emax = bkgd._assert_range(energy_range)
+            else:
+                emin, emax = None, None
+
+        return bkgd.integrate_energy(emin, emax)
