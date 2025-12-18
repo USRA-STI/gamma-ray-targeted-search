@@ -299,14 +299,14 @@ def main():
     w.plot_loglr(loglr_spec_filename, val_min=3.0, spectra=True)
     print('Done.')
 
-    print('\nLight curve plots...')
+    print('\nLightcurve plots...')
     nai = list(nai_configs.keys())
     bgo = list(bgo_configs.keys())
     time_range = search_config['search_range']
     lcplotter = TargetedLightcurves(search.instrument_data['gbm'], trigtime)
     for i in range(filtered_results.size):
         progress.start()
-        task = progress.add_task('Light curves for Event {}.'.format(i+1), total=12)
+        task = progress.add_task('Lightcurves for Event {}...'.format(i+1), total=12)
 
         duration, tstart = filtered_results['duration'][i], filtered_results['tstart'][i]
 

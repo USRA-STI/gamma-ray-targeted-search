@@ -796,6 +796,7 @@ class TargetedLightcurves():
         self._axes = None
         self._min_res = min_res
         self._data = data
+        self._bkgd = {}
         self.dpi = 150
 
     def plot_detectors(self, time_res, filename, event_time, time_range=None, detectors=None, **kwargs):
@@ -1185,7 +1186,12 @@ class TargetedLightcurves():
         Returns:
             (BackgroundRates)
         """
-        bkgd = self._data.fitters.get_item(detector).interpolate_bins(tstart, tstop)
+        if detector not in self._bkgd \
+            or self._bkgd[detector].tstart.size != tstart.size or np.any(self._bkgd[detector].tstart != tstart) \
+            or self._bkgd[detector].tstop.size != tstop.size or np.any(self._bkgd[detector].tstop != tstop):
+            self._bkgd[detector] = self._data.fitters.get_item(detector).interpolate_bins(tstart, tstop)
+
+        bkgd = self._bkgd[detector]
 
         if channel_range is not None:
             bkgd._assert_range(channel_range)
