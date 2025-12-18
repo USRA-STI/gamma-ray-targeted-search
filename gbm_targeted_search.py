@@ -316,12 +316,14 @@ def main():
             {'filename': os.path.join(args.results_dir, f'Event{i}_Summed_Right_NaI_Chan3-4.png'), 'detectors': nai[:6], 'channel_range': (3, 4)},
             {'filename': os.path.join(args.results_dir, f'Event{i}_Summed_Left_NaI_Chan3-4.png'), 'detectors': nai[6:], 'channel_range': (3, 4)},
             {'filename': os.path.join(args.results_dir, f'Event{i}_Summed_All_BGO_Chan0-3.png'), 'detectors': bgo, 'channel_range': (0, 3)}]]
+
         [(lcplotter.plot_channels(duration, time_range=time_range, event_time=tstart, **kwargs), progress.update(task, advance=1))
          for kwargs in [
             {'filename': os.path.join(args.results_dir, f'Event{i}_Channel_All_NaI_Chan0-7.png'), 'detectors': nai, 'channels': [0, 1, 2, 3, 4, 5, 6, 7]},
             {'filename': os.path.join(args.results_dir, f'Event{i}_Channel_Right_NaI_Chan0-7.png'), 'detectors': nai[:6], 'channels': [0, 1, 2, 3, 4, 5, 6, 7]},
             {'filename': os.path.join(args.results_dir, f'Event{i}_Channel_Left_NaI_Chan0-7.png'), 'detectors': nai[6:], 'channels': [0, 1, 2, 3, 4, 5, 6, 7]},
             {'filename': os.path.join(args.results_dir, f'Event{i}_Channel_All_BGO_Chan0-3.png'), 'detectors': bgo, 'channels': [0, 1, 2, 3]}]]
+
         [(lcplotter.plot_detectors(duration, time_range=time_range, event_time=tstart, **kwargs), progress.update(task, advance=1))
          for kwargs in [
             {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_NaI_Chan1-6.png'), 'detectors': nai, 'channel_range': (1, 6)},
@@ -332,20 +334,36 @@ def main():
         progress.stop()
         progress.remove_task(task)
     print('Done.')
-    exit(0)
 
     print('\nLocalizations...')
-    for i in range(filtered_results.size):
+    for i, result in enumerate(filtered_results):
 
-        # event information
-        t = filtered_results.times[i]
-        duration = filtered_results.durations[i]
-        zen = np.array(filtered_results.locs_sc)[1][i]
-        template = filtered_results.templates[i]
+        # Recompute likelihood without sky masking for this timebin
+        search.calculate_likelihood(result['tstart'], result['tstart'] + result['duration'], sky_mask=False)
 
-        # localization
-        systematic = (O3_DGAUSS_Model, atmoscat, zen) 
-        loc = gts.createLocalization(t, duration, template, search, GbmHealPix, systematic, remove_earth=True)
+        # Compute sky probability for max template
+        prob = np.exp(search.like.llr - np.max(search.like.llr))[result['template'], :]
+
+        # Project to NSIDE 64 healpix
+        proj_prob, _ = utils.grid_to_healpix(
+            prob, search.like_points, search.like_frame, nside_out=64)
+
+        # Upscale to NSIDE 128
+        hires_npix = hp.nside2npix(128)
+        theta, phi = hp.pix2ang(64, np.arange(hires_npix))
+        upscaled_prob = hp.get_interp_val(proj_prob, theta, phi)
+
+        # Build GbmHealpix object
+        loc = GbmHealpix.from_data(upscaled_prob, trigtime=trigtime.fermi,
+                                   quaternion=search.like_frame.quaternion, scpos=search.like_frame.obsgeoloc)
+
+        # Apply systematic error
+        systematic = (O3_DGAUSS_Model, result['in_rock'], result['zen'])
+        loc = loc.convolve(*systematic, quaternion=search.like_frame.quaternion, scpos=search.like_frame.obsgeoloc)
+
+        # Remove Earth region
+        loc.remove_earth()
+
         loc.write(args.results_dir, filename='Event{}_healpix.fit'.format(i+1), overwrite=True)
 
         skyplot = EquatorialPlot()
