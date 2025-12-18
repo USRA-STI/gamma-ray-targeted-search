@@ -185,7 +185,7 @@ def main():
 
     tte_data = []
     for i, det_config in enumerate(gbm_config['detectors'].values()):
-        tte = update_tte_trigtime(GbmTte.open(tte_files[i]), trigtime.value)
+        tte = update_tte_trigtime(GbmTte.open(tte_files[i]), trigtime.fermi)
         tte = tte.rebin_energy(rebin_by_edge_index, np.array(det_config['channel_edges']))
         tte_data.append(tte)
         progress.update(task, advance=1)
