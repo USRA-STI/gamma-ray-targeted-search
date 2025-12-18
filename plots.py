@@ -1010,6 +1010,8 @@ class TargetedLightcurves():
         if event_time is None:
             event_time = 0
 
+        # TODO: check for TTE and rebin accordingly using cached _btte, similar to _bkgd
+
         # BTTE resolution
         btte = self._data.data.get_item(detector)
         btte_res = btte.data.time_widths[1]
