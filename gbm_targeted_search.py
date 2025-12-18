@@ -29,6 +29,7 @@ import sys
 import glob
 import time
 import numpy as np
+import healpy as hp
 import argparse
 import datetime
 import matplotlib
@@ -53,7 +54,7 @@ from gdt.missions.fermi.gbm.localization import GbmHealPix
 from gdt.missions.fermi.gbm.finders import ContinuousFinder, TriggerFinder
 
 from data import FitStatus
-from utils import SkyGrid, update_tte_trigtime
+from utils import SkyGrid, update_tte_trigtime, grid_to_healpix
 from plots import TargetedLightcurves, Waterfall, plot_orbit
 from skymap import O3_DGAUSS_Model, LigoHealPix
 from search import TargetedSearch
@@ -286,6 +287,7 @@ def main():
 
     print('\nCreating the following plots:')
 
+    """
     print('\nOrbital plot...')
     orbit_filename = os.path.join(args.results_dir, 'Orbit.png')
     plot_orbit(spacecraft_frames, trigtime, orbit_filename, GbmSaa())
@@ -334,6 +336,7 @@ def main():
         progress.stop()
         progress.remove_task(task)
     print('Done.')
+    """
 
     print('\nLocalizations...')
     for i, result in enumerate(filtered_results):
@@ -345,7 +348,7 @@ def main():
         prob = np.exp(search.like.llr - np.max(search.like.llr))[result['template'], :]
 
         # Project to NSIDE 64 healpix
-        proj_prob, _ = utils.grid_to_healpix(
+        proj_prob, _ = grid_to_healpix(
             prob, search.like_points, search.like_frame, nside_out=64)
 
         # Upscale to NSIDE 128
@@ -354,12 +357,12 @@ def main():
         upscaled_prob = hp.get_interp_val(proj_prob, theta, phi)
 
         # Build GbmHealpix object
-        loc = GbmHealpix.from_data(upscaled_prob, trigtime=trigtime.fermi,
+        loc = GbmHealPix.from_data(upscaled_prob, trigtime=trigtime.fermi,
                                    quaternion=search.like_frame.quaternion, scpos=search.like_frame.obsgeoloc)
 
         # Apply systematic error
         systematic = (O3_DGAUSS_Model, result['in_rock'], result['zen'])
-        loc = loc.convolve(*systematic, quaternion=search.like_frame.quaternion, scpos=search.like_frame.obsgeoloc)
+        loc = loc.convolve(*systematic)
 
         # Remove Earth region
         loc.remove_earth()
@@ -372,11 +375,11 @@ def main():
         plt.clf()
 
         # combined localization
-        if search['skymap'] is not None:
-            region_prob = loc.region_probability(search['skymap']) * 100.0
+        if args.skymap is not None:
+            region_prob = loc.region_probability(args.skymap) * 100.0
             print('\t Event {0} Spatial Association: {1:3.1f}%'.format(i+1, region_prob))
             if region_prob > 50.0:
-                combined = loc.multiply(loc, search['skymap'])
+                combined = loc.multiply(loc, args.skymap)
                 # run from_data to fix _frame member. To do: fix bug in GDT
                 combined = GbmHealPix.from_data(combined.prob, trigtime=loc.trigtime, scpos=loc.scpos, quaternion=loc.quaternion)
                 combined.write(args.results_dir, 
