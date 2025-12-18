@@ -237,6 +237,7 @@ def main():
     progress.start()
     results = search.run(timebins, progress=progress)
     progress.stop()
+    progress.remove_task(progress.tasks[0].id)
 
     # append common coordinate transformations
     frames = search.instrument_data['gbm'].response._preprocessed['frames']
@@ -304,23 +305,32 @@ def main():
     time_range = search_config['search_range']
     lcplotter = TargetedLightcurves(search.instrument_data['gbm'], trigtime)
     for i in range(filtered_results.size):
-        print('Light curves for Event {}.'.format(i+1))
+        progress.start()
+        task = progress.add_task('Light curves for Event {}.'.format(i+1), total=12)
+
         duration, tstart = filtered_results['duration'][i], filtered_results['tstart'][i]
-        [lcplotter.plot_summed(duration, time_range=time_range, event_time=tstart, **kwargs) for kwargs in [
+
+        [(lcplotter.plot_summed(duration, time_range=time_range, event_time=tstart, **kwargs), progress.update(task, advance=1))
+         for kwargs in [
             {'filename': os.path.join(args.results_dir, f'Event{i}_Summed_All_NaI_Chan1-6.png'), 'detectors': nai, 'channel_range': (1, 6)},
             {'filename': os.path.join(args.results_dir, f'Event{i}_Summed_Right_NaI_Chan3-4.png'), 'detectors': nai[:6], 'channel_range': (3, 4)},
             {'filename': os.path.join(args.results_dir, f'Event{i}_Summed_Left_NaI_Chan3-4.png'), 'detectors': nai[6:], 'channel_range': (3, 4)},
             {'filename': os.path.join(args.results_dir, f'Event{i}_Summed_All_BGO_Chan0-3.png'), 'detectors': bgo, 'channel_range': (0, 3)}]]
-        [lcplotter.plot_channels(duration, time_range=time_range, event_time=tstart, **kwargs) for kwargs in [
+        [(lcplotter.plot_channels(duration, time_range=time_range, event_time=tstart, **kwargs), progress.update(task, advance=1))
+         for kwargs in [
             {'filename': os.path.join(args.results_dir, f'Event{i}_Channel_All_NaI_Chan0-7.png'), 'detectors': nai, 'channels': [0, 1, 2, 3, 4, 5, 6, 7]},
             {'filename': os.path.join(args.results_dir, f'Event{i}_Channel_Right_NaI_Chan0-7.png'), 'detectors': nai[:6], 'channels': [0, 1, 2, 3, 4, 5, 6, 7]},
             {'filename': os.path.join(args.results_dir, f'Event{i}_Channel_Left_NaI_Chan0-7.png'), 'detectors': nai[6:], 'channels': [0, 1, 2, 3, 4, 5, 6, 7]},
             {'filename': os.path.join(args.results_dir, f'Event{i}_Channel_All_BGO_Chan0-3.png'), 'detectors': bgo, 'channels': [0, 1, 2, 3]}]]
-        [lcplotter.plot_detectors(duration, time_range=time_range, event_time=tstart, **kwargs) for kwargs in [
+        [(lcplotter.plot_detectors(duration, time_range=time_range, event_time=tstart, **kwargs), progress.update(task, advance=1))
+         for kwargs in [
             {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_NaI_Chan1-6.png'), 'detectors': nai, 'channel_range': (1, 6)},
             {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_NaI_Chan1-2.png'), 'detectors': nai, 'channel_range': (1, 2)},
             {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_NaI_Chan3-4.png'), 'detectors': nai, 'channel_range': (3, 4)},
             {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_BGO_Chan1-6.png'), 'detectors': bgo, 'channel_range': (1, 6)}]]
+
+        progress.stop()
+        progress.remove_task(task)
     print('Done.')
     exit(0)
 
