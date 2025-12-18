@@ -140,7 +140,7 @@ def create_earth_mask(points, geo_azimuth, geo_zenith, geo_radius):
                               points[0,:], 0.5 * np.pi - points[1,:]) > geo_radius
 
 def grid_to_healpix(values, coords, spacecraft_frame, nside_out=64,
-                 coord_type='instrument', return_proj_coord=False):
+                    coord_type='instrument', return_proj_coord=False):
     """ Convert grid points to healpix pixel values
             
     Args:

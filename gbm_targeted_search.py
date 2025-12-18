@@ -287,7 +287,6 @@ def main():
 
     print('\nCreating the following plots:')
 
-    """
     print('\nOrbital plot...')
     orbit_filename = os.path.join(args.results_dir, 'Orbit.png')
     plot_orbit(spacecraft_frames, trigtime, orbit_filename, GbmSaa())
@@ -336,7 +335,6 @@ def main():
         progress.stop()
         progress.remove_task(task)
     print('Done.')
-    """
 
     print('\nLocalizations...')
     for i, result in enumerate(filtered_results):
@@ -352,8 +350,9 @@ def main():
             prob, search.like_points, search.like_frame, nside_out=64)
 
         # Upscale to NSIDE 128
-        hires_npix = hp.nside2npix(128)
-        theta, phi = hp.pix2ang(64, np.arange(hires_npix))
+        hires_nside = 128
+        hires_npix = hp.nside2npix(hires_nside)
+        theta, phi = hp.pix2ang(hires_nside, np.arange(hires_npix))
         upscaled_prob = hp.get_interp_val(proj_prob, theta, phi)
 
         # Build GbmHealpix object
