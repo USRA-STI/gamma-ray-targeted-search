@@ -154,18 +154,18 @@ class TargetedSearch():
             tstop (float): Float representing the end of the timebin
             sky_mask (bool, optional): Mask obstructed sky locations (Earth, Moon, etc) when True
         """
-        # always start with the first instrument in the list
+        # Always start with the first instrument in the list
         instrument = self.config['instruments'][0]
         instrument_data = self.instrument_data[instrument['name']]
 
-        # gather counts, background, response, and sky mask matrix for first instrument
+        # Gather counts, background, response, and sky mask matrix for first instrument
         counts, background_counts, background_var, good, response_matrix, sky_mask_matrix = \
             instrument_data.integrate(tstart, tstop, sky_mask=sky_mask, channel_mask=instrument.channel_mask)
 
-        # save the first instrument frame as a reference for other instruments
+        # Save the first instrument frame as a reference for other instruments
         reference_frame = instrument_data.response.frame
 
-        # append remaining instruments
+        # Append remaining instruments
         for i in range(1, len(self.config['instruments'])):
             # Throw error here because this code is untested. There are probably typos.
             raise NotImplemented("Searching multiple instruments is not implemented yet.")
@@ -173,35 +173,39 @@ class TargetedSearch():
             instrument = self.config['instruments'][i]
             instrument_data = self.instrument_data[instrument['name']]
 
-            # gather counts, background, response, and sky mask matrix for this instrument
+            # Gather counts, background, response, and sky mask matrix for this instrument
             counts_i, background_counts_i, background_var_i, good_i, response_matrix_i, sky_mask_matrix_i = \
                 instrument_data.integrate(tstart, tstop, sky_mask=sky_mask, channel_mask=instrument.channel_mask, reference=(refrence_frame, self.skygrid))
 
-            # update first instrument shape before stacking
+            # Update first instrument shape before stacking
             if i == 1:
                 counts = np.full(response.shape, counts)
                 background_counts = np.full(response.shape, background_counts)
                 background_var = np.full(response.shape, background_var)
                 good = np.full(response.shape, good)
 
-            # stack this instrument with the others
+            # Stack this instrument with the others
             counts = np.hstack([counts, counts_i])
             background_counts = np.hstack([background_counts, background_counts_i])
             background_var = np.hstack([background_var, background_var_i])
             good = np.hstack([good, good_i])
             response_matrix = np.hstack([response_matrix, response_matrix_i])
-            sky_mask_matrix = sky_mask_matrix | sky_mask_matrix_i
 
-        # apply sky mask matrix
-        response_matrix = response_matrix[:, sky_mask_matrix, :]
+            # Combine sky masks when present
+            if sky_mask_matrix is not None and sky_mask_matrix_i is not None:
+                sky_mask_matrix = sky_mask_matrix | sky_mask_matrix_i
+            elif sky_mask_matrix is None and sky_mask_matrix_i is not None:
+                sky_mask_matrix = sky_mask_matrix_i
 
-        # match remaining matrix shapes
-        if len(counts.shape) > 1:
-            counts = counts[:, sky_mask_matrix, :]
-            background_counts = background_counts[:, sky_mask_matrix, :]
-            background_var = background_car[:, sky_mask_matrix, :]
-            good = good[:, sky_mask_matrix, :]
-        else:
+        # Apply sky mask matrix and account for multi-instrument search shapes
+        if sky_mask_matrix is not None:
+            response_matrix = response_matrix[:, sky_mask_matrix, :]
+            if len(counts.shape) > 1:
+                counts = counts[:, sky_mask_matrix, :]
+                background_counts = background_counts[:, sky_mask_matrix, :]
+                background_var = background_car[:, sky_mask_matrix, :]
+                good = good[:, sky_mask_matrix, :]
+        elif len(counts.shape) > 1:
             good = good[np.newaxis, np.newaxis, :]
 
         # TO DO: The Likelihood class currently flattens the response_matrix over
@@ -210,7 +214,7 @@ class TargetedSearch():
         self.like = Likelihood(response_matrix.shape[0], self.skygrid.size)
         self.like.calculate(counts, background_counts, background_var, good * response_matrix)
 
-        self.like_points = self.skygrid._points[:, sky_mask_matrix]
+        self.like_points = self.skygrid._points[:, sky_mask_matrix] if sky_mask_matrix is not None else self.skygrid._points
         self.like_frame = reference_frame
 
     def run(self, timebins, time_ref=0.0, sky_mask=True, progress=None):
