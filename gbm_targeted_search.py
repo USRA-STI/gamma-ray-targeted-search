@@ -58,14 +58,14 @@ from utils import SkyGrid, update_tte_trigtime, grid_to_healpix
 from plots import TargetedLightcurves, Waterfall, plot_orbit
 from skymap import O3_DGAUSS_Model, LigoHealPix
 from search import TargetedSearch
-from results import Results, calculate_top_snr, calculate_pe_variables, calculate_marginal_flux
+from results import Results, calculate_top_snr, calculate_pe_variables, calculate_marginal_flux, calculate_coinclr
 from filters import remove_pe, remove_dur_spec, downselect
 from response import GbmResponse
 from configuration import InstrumentConfiguration, SearchConfiguration
 
 basedir = os.path.dirname(os.path.abspath(__file__))
 
-def GetData(trigger_id, settings, data_directory):
+def GetData(trigger_id, settings, data_directory, protocol='HTTPS'):
     """ Method for downloading data needed by the targeted search
 
     Args:
@@ -73,6 +73,7 @@ def GetData(trigger_id, settings, data_directory):
                                          a Time() object for analyzing continuous data
         data_directory (str): Directory for downloaded data. Data will appear in a subfolder formatted as
                               'data/trigger_id' for triggered data and 'data/#########.###' for continuous data.
+        protocol (str): Download protocol. Can be 'HTTPS' or 'FTP'. 'AWS' is unsupported.
 
     Returns:
         (Time, [str, str, ...], str): tuple with Time() formatted trigger time, 
@@ -96,8 +97,8 @@ def GetData(trigger_id, settings, data_directory):
     poshist_files = sorted(glob.glob(poshist_wildcard))
 
     if len(tte_files) < len(settings['detectors']):
-        ftp = TriggerFinder(trigger_id) if triggered else ContinuousFinder(trigger_id)
-        tte_files = ftp.get_tte(path, dets=settings['detectors'])
+        finder = TriggerFinder(trigger_id, protocol=protocol) if triggered else ContinuousFinder(trigger_id, protocol=protocol)
+        tte_files = finder.get_tte(path, dets=settings['detectors'])
 
     # get trigtime from first triggered TTE file when using triggered files
     if triggered:
@@ -107,9 +108,8 @@ def GetData(trigger_id, settings, data_directory):
 
     # ensure we have a position history file
     if not len(poshist_files):
-        if ftp is None or triggered:
-            ftp = ContinuousFinder(trigger_id)
-        ftp.get_poshist(path)
+        finder = ContinuousFinder(trigger_id, protocol=protocol)
+        finder.get_poshist(path)
         poshist_files = sorted(glob.glob(poshist_wildcard))
             
     if len(tte_files) != len(settings['detectors']) or not len(poshist_files):
@@ -121,6 +121,8 @@ def GetData(trigger_id, settings, data_directory):
 
 def main():
 
+    protocols = ['HTTPS', 'FTP']
+
     parser = argparse.ArgumentParser("gbm_targeted_search.py", "Script for performing the full GBM targeted search")
     parser.add_argument("-t", "--time", default=None, help="Time for continuous data search.")
     parser.add_argument("-b", "--burst-number", default=None, help="GBM burst number for on-board trigger search.")
@@ -131,7 +133,8 @@ def main():
     parser.add_argument("--min-step", default=0.064, type=float, help="Minimum time step size in seconds used to move duration window.")
     parser.add_argument("--num-steps", default=8, type=int, help="Sets duration window step size using duration/num_steps for steps larger than --min-step.")
     parser.add_argument("-s", "--skymap", default=None, type=str, help="Optional skymap file.")
-    parser.add_argument("-o", "--results-dir", default=".", type=str, help="Directory for results output")
+    parser.add_argument("-o", "--results-dir", default=".", type=str, help="Directory for results output.")
+    parser.add_argument("-p", "--protocol", default="HTTPS", type=str, choices=protocols, help="Download Protocol.")
     parser.add_argument("--flatten", action='store_true', help="Flatten multiorder skymaps.")
     
     print("\n"  + " ".join(sys.argv) +  "\n")
@@ -178,7 +181,7 @@ def main():
          'bkgd_range': [-500, 500], 'bkgd_window': 125.0,
          'data_range': np.array([-0.5, 0.5]) * (args.search_window_width + args.max_dur)})
 
-    trigtime, tte_files, poshist_file = GetData(trigger, gbm_config, "data/gbm")
+    trigtime, tte_files, poshist_file = GetData(trigger, gbm_config, "data/gbm", args.protocol)
 
     progress.start()
     task = progress.add_task("Opening TTE..." , total=len(gbm_config['detectors']))
@@ -260,9 +263,14 @@ def main():
     filtered_results = downselect(filtered_results, threshold=search_config['min_loglr'], no_empty=True)
     filtered_results = downselect(filtered_results, combine_spec=False, fixedwin=search_config['win_width'])
     filtered_results = remove_dur_spec(filtered_results, 8.192, 2)
-    filtered_results.save(args.results_dir, 'filtered_results.npz')
 
-    # TO DO ADD coinclr calc
+    # add marginalization of likelihood ratio over the skymap prior
+    filtered_results.append_fields(["coinclr"], [np.empty(filtered_results.size, dtype=float)])
+    for result in filtered_results:
+        search.calculate_likelihood(result['tstart'], result['tstart'] + result['duration'])
+        result['coinclr'] = calculate_coinclr(search, result, args.skymap)
+
+    filtered_results.save(args.results_dir, 'filtered_results.npz')
 
     # report the results
     print('\nFound {} candidates...\n'.format(filtered_results.size))
@@ -278,7 +286,7 @@ def main():
         "--------------------------------------------------------------------------------------------------------------------------------------------------")
 
     keys = ['tstart', 'duration', 'in_gti', 'in_rock', 'like_status', 'az', 'zen', 'ra', 'dec', 'template', 'flux_amplitude',
-            'like_snr', 'snr0', 'snr1', 'reduced_chisq', 'chiplusdof', 'sun_angle', 'earth_angle', 'loglr', 'loglr', 'pe0', 'pe1', 'pe2']
+            'like_snr', 'snr0', 'snr1', 'reduced_chisq', 'chiplusdof', 'sun_angle', 'earth_angle', 'loglr', 'coinclr', 'pe0', 'pe1', 'pe2']
 
     for values in filtered_results.to_list(keys, units={key: np.degrees(1) for key in ['az', 'zen', 'ra', 'dec', 'sun_angle', 'earth_angle']}):
         values[0] = values[0] + 0.5 * values[1] # convert to tcent
@@ -379,8 +387,6 @@ def main():
             print('\t Event {0} Spatial Association: {1:3.1f}%'.format(i+1, region_prob))
             if region_prob > 50.0:
                 combined = loc.multiply(loc, args.skymap)
-                # run from_data to fix _frame member. To do: fix bug in GDT
-                combined = GbmHealPix.from_data(combined.prob, trigtime=loc.trigtime, scpos=loc.scpos, quaternion=loc.quaternion)
                 combined.write(args.results_dir, 
                                filename='Event{}_healpix_combined.fit'.format(i+1), overwrite=True)
 
