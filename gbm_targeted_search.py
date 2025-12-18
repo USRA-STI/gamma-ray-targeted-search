@@ -123,7 +123,7 @@ def main():
 
     protocols = ['HTTPS', 'FTP']
 
-    parser = argparse.ArgumentParser("gbm_targeted_search.py", "Script for performing the full GBM targeted search")
+    parser = argparse.ArgumentParser("gbm_targeted_search.py", "Script for performing the GBM targeted search")
     parser.add_argument("-t", "--time", default=None, help="Time for continuous data search.")
     parser.add_argument("-b", "--burst-number", default=None, help="GBM burst number for on-board trigger search.")
     parser.add_argument("-f", "--format", type=str, default=None, choices=[None, 'gps', 'fermi', 'datetime'], help="Format of --trigger option.")
@@ -135,6 +135,9 @@ def main():
     parser.add_argument("-s", "--skymap", default=None, type=str, help="Optional skymap file.")
     parser.add_argument("-o", "--results-dir", default=".", type=str, help="Directory for results output.")
     parser.add_argument("-p", "--protocol", default="HTTPS", type=str, choices=protocols, help="Download Protocol.")
+    parser.add_argument("-x", "--background-window", default=125.0, type=float, help="NaivePossion background window.")
+    parser.add_argument("-y", "--background-poly", default=None, type=float, help="Polynomial background order.")
+    parser.add_argument("-z", "--background-range", default=[-500, 500], nargs="+", type=float, help="Background fit range(s).")
     parser.add_argument("--flatten", action='store_true', help="Flatten multiorder skymaps.")
     
     print("\n"  + " ".join(sys.argv) +  "\n")
@@ -152,6 +155,12 @@ def main():
 
     if args.format is None and args.time is not None:
         raise ValueError("User must specify time format with --format")
+
+    if args.background_poly is None and len(args.background_range) != 2:
+        raise ValueError("User must provide two values to --background-range for NaivePoisson fit")
+
+    if args.background_poly is not None and len(args.background_range) % 2 != 0:
+        raise ValueError("User must provide an even number of values to --background-range for Polynomial fit")
 
     if args.skymap:
         args.skymap = LigoHealPix.open(args.skymap, min_nside=128, flatten=args.flatten, prob_only=False)
@@ -178,7 +187,7 @@ def main():
          'min_loglr': 5,
          'min_dur': args.min_dur, 'max_dur': args.max_dur,
          'min_step': args.min_step,'num_steps': args.num_steps,
-         'bkgd_range': [-500, 500], 'bkgd_window': 125.0,
+         'bkgd_range': args.background_range, 'bkgd_window': args.background_window,
          'data_range': np.array([-0.5, 0.5]) * (args.search_window_width + args.max_dur)})
 
     trigtime, tte_files, poshist_file = GetData(trigger, gbm_config, "data/gbm", args.protocol)
