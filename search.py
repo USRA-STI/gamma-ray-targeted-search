@@ -228,7 +228,7 @@ class TargetedSearch():
         results = Results(len(timebins), time_ref=time_ref)
         [calc['results'].resize(len(timebins)) for calc in self._calculations]
 
-        task = progress.add_task("Searching...", total=len(timebins)) if progress else None
+        task = None if progress is None else progress.add_task("Searching...", total=len(timebins))
 
         for i, (tstart, duration) in enumerate(timebins):
             # compute the likelihood for this timebin
@@ -247,7 +247,7 @@ class TargetedSearch():
             for calc in self._calculations:
                 calc['results'][i] = calc['method'](self, results.data[i], *calc['args'], **calc['kwargs'])
 
-            if progress:
+            if progress is not None:
                 progress.update(task, advance=1)
 
         # combine required + user calculated results into a single array
