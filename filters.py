@@ -121,7 +121,7 @@ def downselect(results, overlap_factor=0.2, threshold=None, combine_spec=True,
     if results.size == 0:
         return []
     
-    data = numpy.lib.recfunctions.append_fields(results.data, "downselect_idx", np.arange(results.size))
+    data = numpy.lib.recfunctions.append_fields(results.data, "downselect_idx", np.arange(results.size), usemask=False)
 
     if threshold:
         mask = (data['loglr'] >= threshold)
