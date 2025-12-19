@@ -136,7 +136,7 @@ def main():
     parser.add_argument('-o', '--results-dir', default='.', type=str, help="Directory for results output.")
     parser.add_argument('-p', '--protocol', default='HTTPS', type=str, choices=protocols, help="Download Protocol.")
     parser.add_argument('-x', '--background-window', default=125.0, type=float, help="NaivePossion background window.")
-    parser.add_argument('-y', '--background-poly', default=None, type=float, help="Polynomial background order.")
+    parser.add_argument('-y', '--background-poly', default=None, type=int, help="Polynomial background order.")
     parser.add_argument('-z', '--background-range', default=[-500, 500], nargs="+", type=float, help="Background fit range(s).")
     parser.add_argument('--flatten', action='store_true', help="Flatten multiorder skymaps.")
     
@@ -167,6 +167,11 @@ def main():
         if args.time is None and args.burst_number is None:
             args.time = args.skymap.trigtime
             args.format = 'datetime'
+
+    if args.background_poly:
+        # reformat as separate fit intervals for the background polynomial
+        args.background_range = [
+            (args.background_range[i], args.background_range[i+1]) for i in range(0, len(args.background_range), 2)]
 
     # apply trigger formatting for Time() object trigger types.
     # Note: setting --time will over-ride skymap time.
@@ -225,10 +230,17 @@ def main():
          names=gbm_config['detector_names'])
 
     print("  Fitting background")
-    backfitters = DataCollection.from_list(
-        [BackgroundFitter.from_tte(tte.slice_time(search_config['bkgd_range']), NaivePoisson) for tte in ttes],
-        names=gbm_config['detector_names'])
-    backfitters.fit(window_width=search_config['bkgd_window'], fast=True)
+    backfitters = None
+    if args.background_poly is None: # unbinned sliding window background (average rate over bkgd_window period)
+        backfitters = DataCollection.from_list(
+            [BackgroundFitter.from_tte(tte.slice_time(search_config['bkgd_range']), NaivePoisson) for tte in ttes],
+            names=gbm_config['detector_names'])
+        backfitters.fit(window_width=search_config['bkgd_window'], fast=True)
+    else: # polynomial background
+        backfitters = DataCollection.from_list(
+            [BackgroundFitter.from_phaii(phaii, Polynomial, time_ranges=search_config['bkgd_range']) for phaii in phaiis],
+            names=gbm_config['detector_names'])
+        backfitters.fit(order=args.background_poly)
     
     goodness_of_fit = DataCollection.from_list(
         [FitStatus(len(edges) - 1) for det, edges in gbm_config['channel_edges'].items()],
