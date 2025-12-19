@@ -41,6 +41,7 @@ from astropy.coordinates import SkyCoord, angular_separation
 from gdt.core.data_primitives import EventList, Gti
 from gdt.core.tte import PhotonList
 
+
 class SkyGrid():
     """Class to produce an approximate evenly space grid on the sky in
     azimuth and zenith
@@ -70,7 +71,7 @@ class SkyGrid():
         return np.rad2deg(self._points)
     
     def _calculate(self, res):
-        """ Method to calculate locations of the response grid on the sky.
+        """Method to calculate locations of the response grid on the sky.
 
         (phi, theta) grid designed to match up with the ones in GBM response 
         tables (in radians) while table values are rounded to the nearest 
@@ -82,7 +83,7 @@ class SkyGrid():
             res (float): Angular separation between grid points
 
         Returns:
-            np.ndarray: Array with azimuth and zenith locations of grid points in radians
+            (np.ndarray): Array with azimuth and zenith locations of grid points in radians
         """
         theta = np.arange(res, 180, res)
         # angular distance around axis in 2*pi radians
@@ -104,7 +105,7 @@ class SkyGrid():
         return np.deg2rad(np.array(rows).T)
 
 def get_geo_coordinates(frame, unit='rad', single=False):
-    """ Convert the geocenter coordinates from celestial to spacecraft coordinates
+    """Convert the geocenter coordinates from celestial to spacecraft coordinates
 
     Args:
         frame (Frame): frame object with spacecraft position 
@@ -123,7 +124,7 @@ def get_geo_coordinates(frame, unit='rad', single=False):
     return geo_azimuth.to_value(unit), geo_zenith.to_value(unit), frame.earth_angular_radius.to_value(unit)
 
 def create_earth_mask(points, geo_azimuth, geo_zenith, geo_radius):
-    """ Creates a mask with visible locations set to True and non-visible
+    """Creates a mask with visible locations set to True and non-visible
     locations blocked by the Earth set to False
 
     Args:
@@ -141,7 +142,7 @@ def create_earth_mask(points, geo_azimuth, geo_zenith, geo_radius):
 
 def grid_to_healpix(values, coords, spacecraft_frame, nside_out=64,
                     coord_type='instrument', return_proj_coord=False):
-    """ Convert grid points to healpix pixel values
+    """Convert grid points to healpix pixel values
             
     Args:
         values (np.array): Original grid values
@@ -217,67 +218,3 @@ def update_tte_trigtime(tte, t0):
     return PhotonList.from_data(data, gti=gti, trigger_time=t0,
                                 event_deadtime=tte.event_deadtime,
                                 overflow_deadtime=tte.overflow_deadtime)
-
-def sky_prior(grid, spacecraft_frame, small_map_prob=None, skymap=None):
-    """ Calculate the sky prior given a map, or do uniform prior, in the spacecraft frame.
-    The prior is in equatorial, so we need to rotate it to spacecraft.
-
-    Args:
-        grid (np.ndarray): grid of sky locations used in the instrument response
-        spacecraft_frame (Frame): frame object with information about spacecraft position
-        small_map_prob (np.ndarray): use existing small skymap projection when not None
-        skymap (HealPix class): localization probability to use as the prior. Use uniform prior when None.
-
-    Returns:
-        np.ndarray: the sky prior in the spacecraft frame
-    """
-    if small_map_prob is not None:
-
-        # Small map case is already projected into spacecraft coordinates
-        skyprior = small_map_prob
-
-    elif skymap is not None:
-
-        # Get the azimuth and zenith of each unmasked sky grid position
-        azimuth, zenith = grid
-
-        # Get the equivelent RA and Dec of each unmasked sky grid position
-        coords = SkyCoord(azimuth, 0.5 * np.pi - zenith, frame=spacecraft_frame, unit='rad')
-        ra = coords.icrs.ra
-        dec = coords.icrs.dec
-
-        # Calculate the probability of each sky position
-        # For now, do explicit lookup with ang2pix to avoid GDT interpolation of values.
-        # We need to use exact values to ensure consistency between multiorder vs single resolution map formats.
-        ph, th = ra.rad, 0.5 * np.pi - dec.rad
-        pix = hp.ang2pix(skymap.nside, th, ph)
-        skyprior = (skymap.prob / skymap.pixel_area)[pix]
-
-    else:
-        skyprior = np.ones(len(grid[0]), np.float64)
-
-    # Ensure we're normalized to 1
-    skyprior /= skyprior.sum()
-    logskyprior = np.log(np.maximum(1e-100, skyprior))
-
-    return logskyprior
-
-def get_sun_angle(coordinate_max, t0):
-    """ Calculates the sun angle relative to a location.
-
-    Note: this could probably move to the results class.
-
-    Args:
-        coordinate_max (SkyCoord): location of maximum likelihood
-        t0 (Time): time used to retrieve sun location
-
-    Returns:
-        float: angular separation to the sun in degrees
-    """
-    if t0 is not None:
-        sun_coord = get_sun(t0)
-        sun_angle = sun_coord.separation(coordinate_max)[0]
-    else:
-        sun_angle = None
-
-    return sun_angle

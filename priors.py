@@ -55,22 +55,22 @@ def sky_prior(grid, frame, skymap=None, pmin=1e-100):
     elif isinstance(skymap, np.ndarray):
         prior = skymap
     else:
-        # Get the azimuth and zenith of each unmasked sky grid position
+        # get the azimuth and zenith of each unmasked sky grid position
         azimuth, zenith = grid
 
-        # Get the equivelent RA and Dec of each unmasked sky grid position
+        # get the equivelent RA and Dec of each unmasked sky grid position
         coords = SkyCoord(azimuth, 0.5 * np.pi - zenith, frame=frame, unit='rad')
         ra = coords.icrs.ra
         dec = coords.icrs.dec
 
-        # Calculate the probability of each sky position
-        # For now, do explicit lookup with ang2pix to avoid GDT interpolation of values.
-        # We need to use exact values to ensure consistency between multiorder vs single resolution map formats.
+        # calculate the probability of each sky position
+        # Note: for now, do explicit lookup with ang2pix to avoid GDT interpolation of values.
+        # we need to use exact values to ensure consistency between multiorder vs single resolution map formats.
         ph, th = ra.rad, 0.5 * np.pi - dec.rad
         pix = hp.ang2pix(skymap.nside, th, ph)
         prior = (skymap.prob / skymap.pixel_area)[pix]
 
-    # Ensure we're normalized to 1
+    # ensure we're normalized to 1
     prior /= prior.sum()
 
     return prior
