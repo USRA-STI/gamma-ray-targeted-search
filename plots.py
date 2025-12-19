@@ -59,22 +59,17 @@ def plot_orbit(spacecraft_frames, t0, filename, saa=None):
         filename (str): The filename for the image
         saa (SouthAtlanticAnomaly): class with polygon border definition for the South Atlantic Anomaly.
     """
-
-    # Initialize the plot
     orbit_plot = EarthPlot(interactive=False, saa=saa)
 
-    # Limit to 45 min on either side of t0
+    # limit to 45 min on either side of t0
     obstime = spacecraft_frames.obstime
     tstart = t0 - 2700.0 * u.second
     tstop = t0 + 2700.0 * u.second
 
-    # Slice the obstime object
     obstime_subset = obstime[(obstime >= tstart) & (obstime <= tstop)]
     spacecraft_frames_subset = spacecraft_frames.at(obstime_subset)
 
-    # Make the plot
     orbit_plot.add_spacecraft_frame(spacecraft_frames_subset, trigtime=t0, sizes=[100], color='green', zorder=1000)
-
     orbit_plot.orbit.color = 'darkblue'
     orbit_plot.orbit.alpha = 1
     orbit_plot.orbit.linewidth = 2
@@ -85,13 +80,13 @@ def plot_orbit(spacecraft_frames, t0, filename, saa=None):
         print(err)
     plt.close()
 
+
 class Waterfall():
     """Class to make waterfall plots of variables from the targeted search.
     These are made as a function of candidate start time and duration. We call
     them 'waterfall' plots because real transients create an image that resembles
     a waterfall when using a blue color scale.
     """
-    
     def __init__(self, results, t0, figsize=(12,6), fontsize=12):
         """ Class constructor
 
@@ -180,7 +175,7 @@ class Waterfall():
     
     def _plot_multi(self, filename, vals, title, val_max=None, val_min=None, 
                    log_color=True, cmaps=['Purples', 'Blues', 'Greens', 'Oranges', 'Reds']):
-        """ Internal method for plotting multiple waterfall plots on the same axes
+        """Internal method for plotting multiple waterfall plots on the same axes
 
         Args:
             filename (str): The filename to save to. Using None will display the image.
@@ -191,7 +186,6 @@ class Waterfall():
                                         linearly.  Default is True.
             cmaps (list, optional): For multi-spectra plot, the color maps to use. Default is
                                     ('Purples', 'Blues', 'Greens')
- 
         """
         spectra = np.unique(self._results['template'])
         nspec = spectra.size
@@ -210,8 +204,7 @@ class Waterfall():
             val_max = np.nanmax(vals)
         if val_min is None:
             if log_color:
-                # this appears to be a typo. val should be vals?
-                val_min = np.nanmin(val[val > 0.0])
+                val_min = np.nanmin(vals[vals > 0.0])
             else:
                 val_min = np.nanmin(vals)
         
@@ -223,7 +216,7 @@ class Waterfall():
             mask = (self._results['template'] == spectra[i])
             colors[mask] = cmaps[i](color_fracs[mask], alpha=1.0)
 
-        # Create the rectangle patch with a specific color
+        # create the rectangle patch with a specific color
         # now using PatchCollection because its ~2x faster than adding
         # each patch individually
         self._init_fig()
@@ -244,7 +237,7 @@ class Waterfall():
         
     def _plot_one(self, filename, vals, title, val_max=None, val_min=None, 
               log_color=True, cmap='Blues'):            
-        """ Internal method for plotting a single waterfall plot
+        """Internal method for plotting a single waterfall plot
 
         Note: is this function really needed? Can't we just add an argument to plot_multi to allow
         a case where all spectra are combined?
@@ -265,16 +258,16 @@ class Waterfall():
             val_max = np.nanmax(vals)
         if val_min is None:
             if log_color:
-                val_min = np.nanmin(val[val > 0.0])
+                val_min = np.nanmin(vals[vals > 0.0])
             else:
                 val_min = np.nanmin(vals)
         
-        # Get the color map, calculate color fraction, and map to rgb(a)
+        # get the color map, calculate color fraction, and map to rgb(a)
         cmap = colormaps.get_cmap(cmap)
         color_fracs = self._scale_color(vals, val_min, val_max, log_color)        
         colors = cmap(color_fracs, alpha=1.0)
         
-        # Create the rectangle patch with a specific color
+        # create the rectangle patch with a specific color
         # now using PatchCollection because its ~2x faster than adding
         # each patch individually
         self._init_fig()
@@ -298,7 +291,7 @@ class Waterfall():
         plt.close()
 
     def _init_fig(self):
-        """ Internal method to intialize the plot figure"""
+        """Internal method to intialize the plot figure"""
         self._fig = plt.figure(figsize=self._figsize)
         self._ax = self._fig.gca()
 
@@ -310,21 +303,21 @@ class Waterfall():
 
         timescales = np.unique(self._results['duration'])
 
-        # Set the ylimits and scale
+        # set the ylimits and scale
         self._ax.set_ylim(timescales[0] / self._x, timescales[-1] * self._x)
         self._ax.set_yscale('log')
-        # Set the yticks and ylabel
+        # set the yticks and ylabel
         self._ax.set_yticks(timescales)
         self._ax.set_yticklabels(['{:.3f}'.format(t) for t in timescales])
         self._ax.set_ylabel('Timescale (s)', fontsize=self._fontsize)
 
-        # Turn on the minor ticks, but remove them on the y-axis
+        # turn on the minor ticks, but remove them on the y-axis
         self._ax.minorticks_on()
         self._ax.tick_params(axis='y',which='minor',left='off')
         self._ax.tick_params(axis='y',which='minor',right='off')
      
     def _rect_dims(self, tstarts, durs):
-        """ Internal method to set the rectangular dimensions in the plot for each of search bins
+        """Internal method to set the rectangular dimensions in the plot for each of search bins
 
         Args:
             tstarts (np.ndarray): start time of the search bins
@@ -336,7 +329,7 @@ class Waterfall():
         return dims
     
     def _scale_color(self, vals, min_val, max_val, log_color):
-        """ Method to calculate the fraction of the min-max allowable range.
+        """Method to calculate the fraction of the min-max allowable range.
         This will represent the color to use on the colorbar given the 
         data value and min-max range of colorbar
 
@@ -350,12 +343,14 @@ class Waterfall():
             color_fracs = np.log(vals-min_val)/np.log(max_val-min_val)
         else:
             color_fracs = (vals-min_val)/(max_val-min_val)
+
         color_fracs[np.isnan(color_fracs)] = 0.0
         color_fracs[color_fracs < 0.0] = 0.0
+
         return color_fracs
     
     def _one_colorbar(self, cmap, log_color, val_range, title):
-        """ Method to plot the colorbar for a single spectrum
+        """Method to plot the colorbar for a single spectrum
 
         Args:
             cmap (str): name of the color map to use
@@ -375,7 +370,7 @@ class Waterfall():
         colorbar.set_label(title, fontsize=self._fontsize)
     
     def _multi_colorbar(self, cmaps, names, log_color, val_range, title):
-        """ Method to plot the colorbars for multiple spectra
+        """Method to plot the colorbars for multiple spectra
 
         Args:
             cmaps (list): the color maps to use.
@@ -403,7 +398,8 @@ class Waterfall():
         cbs[-1].set_label(title, fontsize=self._fontsize)                             
 
 
-class plotElement():
+# TODO: Check if we can replace this class with a GDT class
+class PlotElement():
     """A base class representing a plot element.  A plot element can be a 
     complex collection of more primitive matplotlib plot elements, but are 
     treated as a single element.
@@ -417,9 +413,8 @@ class plotElement():
         different colors (and alphas). For those classes, refer to 
         their specifications as to the definition of :attr:`color`.
     """
-
     def __init__(self, color=None, alpha=None):
-        """ Class constructor
+        """Class constructor
 
         Args:
             alpha (float): The alpha opacity value, between 0 and 1.
@@ -432,22 +427,22 @@ class plotElement():
         self._kwargs = None
 
     def __del__(self):
-        """ Class destructor"""
+        """Class destructor"""
         self.remove()
 
     @property
     def visible(self):
-        """ (bool): True if the element is shown on the plot, False otherwise"""
+        """(bool): True if the element is shown on the plot, False otherwise"""
         return self._visible
 
     @property
     def color(self):
-        """ (str): color of the plot element"""
+        """(str): color of the plot element"""
         return self._color
 
     @color.setter
     def color(self, color):
-        """ Method for setting the plot element color
+        """Method for setting the plot element color
 
         Args:
             color (str): color of the plot element
@@ -457,12 +452,12 @@ class plotElement():
 
     @property
     def alpha(self):
-        """ alpha (float): The alpha opacity value, between 0 and 1."""
+        """(float): The alpha opacity value, between 0 and 1."""
         return self._alpha
 
     @alpha.setter
     def alpha(self, alpha):
-        """ Method for setting the plot element color
+        """Method for setting the plot element color
 
         Args:
             alpha (float): The alpha opacity value, between 0 and 1.
@@ -527,7 +522,7 @@ class plotElement():
             pass
 
     def _change_visibility(self, visible):
-        """ Internal metho for updating visibility
+        """Internal metho for updating visibility
 
         Args:
             visible (bool): True if the element is shown on the plot, False otherwise.
@@ -539,12 +534,14 @@ class plotElement():
                 self._set_visible(artist, visible)
         self._visible = visible
 
-class LightcurveBackground(plotElement):
+
+# TODO: Check if we can replace this class with a GDT class
+class LightcurveBackground(PlotElement):
     """Plot a lightcurve background model with an error band.
 
     Parameters:
         backrates (:class:`~gbm.background.BackgroundRates`):
-            The background rates object integrated over energy.  If there is 
+            The background rates object integrated over energy. If there is
             more than one remaining energy channel, the background will be 
             integrated over the remaining energy channels.
         ax (:class:`matplotlib.axes`): The axis on which to plot
@@ -571,10 +568,9 @@ class LightcurveBackground(plotElement):
         visible (bool): True if the element is shown on the plot, 
                         False otherwise    
     """
-
     def __init__(self, backrates, ax, color=None, alpha=None, cent_alpha=None,
                  err_alpha=None, cent_color=None, err_color=None, **kwargs):
-        """ Class constructor
+        """Class constructor
 
         Args:
             backrates (:class:`~gbm.background.BackgroundRates`):
@@ -614,12 +610,12 @@ class LightcurveBackground(plotElement):
 
     @property
     def color(self):
-        """ (str): color of the background"""
+        """(str): color of the background"""
         return self._color
 
     @color.setter
     def color(self, color):
-        """ color (str): color of the background"""
+        """(str): color of the background"""
         [artist.set_color(color) for artist in self._artists]
         self._color = color
         self._cent_color = color
@@ -627,12 +623,12 @@ class LightcurveBackground(plotElement):
 
     @property
     def alpha(self):
-        """ (float): alpha of the background"""
+        """(float): alpha of the background"""
         return self._alpha
 
     @alpha.setter
     def alpha(self, alpha):
-        """ alpha (float): alpha of the background"""
+        """(float): alpha of the background"""
         [artist.set_alpha(alpha) for artist in self._artists]
         self._alpha = alpha
         self._cent_alpha = alpha
@@ -640,54 +636,54 @@ class LightcurveBackground(plotElement):
 
     @property
     def cent_alpha(self):
-        """ (float): alpha of the background centroid line"""
+        """(float): alpha of the background centroid line"""
         return self._cent_alpha
 
     @cent_alpha.setter
     def cent_alpha(self, alpha):
-        """ alpha (float): alpha of the background centroid line"""
+        """(float): alpha of the background centroid line"""
         [artist.set_alpha(alpha) for artist in self._artists \
          if artist.__class__.__name__ == 'Line2D']
         self._cent_alpha = alpha
 
     @property
     def err_alpha(self):
-        """ (float): alpha of the background uncertainty"""
+        """(float): alpha of the background uncertainty"""
         return self._err_alpha
 
     @err_alpha.setter
     def err_alpha(self, alpha):
-        """ alpha (float): alpha of the background uncertainty"""
+        """(float): alpha of the background uncertainty"""
         [artist.set_alpha(alpha) for artist in self._artists \
          if artist.__class__.__name__ == 'PolyCollection']
         self._err_alpha = alpha
 
     @property
     def cent_color(self):
-        """ (float): color of the background centroid line"""
+        """(float): color of the background centroid line"""
         return self._cent_color
 
     @cent_color.setter
     def cent_color(self, color):
-        """ color (float): color of the background centroid line"""
+        """(float): color of the background centroid line"""
         [artist.set_color(color) for artist in self._artists \
          if artist.__class__.__name__ == 'Line2D']
         self._cent_color = color
 
     @property
     def err_color(self):
-        """ (float): color of the background uncertainty"""
+        """(float): color of the background uncertainty"""
         return self._err_color
 
     @err_color.setter
     def err_color(self, color):
-        """ color (float): color of the background uncertainty"""
+        """color (float): color of the background uncertainty"""
         [artist.set_color(color) for artist in self._artists \
          if artist.__class__.__name__ == 'PolyCollection']
         self._err_color = color
 
     def _create(self, backrates, ax):
-        """ Internal method to create the lightcurve plot
+        """Internal method to create the lightcurve plot
 
         Args:
             backrates (BackgroundRates): background rates object to plot
@@ -700,6 +696,7 @@ class LightcurveBackground(plotElement):
                                      err_alpha=self._err_alpha, **self._kwargs)
 
 
+# TODO: Check if we can replace this class with a GDT class
 def errorband(x, y_upper, y_lower, ax, **kwargs):
     """Plot an error band
     
@@ -716,6 +713,7 @@ def errorband(x, y_upper, y_lower, ax, **kwargs):
     refs = ax.fill_between(x, y_upper.squeeze(), y_lower.squeeze(), **kwargs)
     return refs
 
+# TODO: Check if we can replace this class with a GDT class
 def lightcurve_background(backrates, ax, cent_color=None, err_color=None,
                           cent_alpha=None, err_alpha=None, **kwargs):
     """Plot a lightcurve background model with an error band
@@ -733,7 +731,7 @@ def lightcurve_background(backrates, ax, cent_color=None, err_color=None,
         **kwargs: Other plotting options
     
     Returns:
-        list: The reference to the lower and upper selection    
+        (list): The reference to the lower and upper selection
     """
     times = backrates.time_centroids
     rates = backrates.rates
@@ -742,38 +740,20 @@ def lightcurve_background(backrates, ax, cent_color=None, err_color=None,
                    color=err_color, linestyle='-', **kwargs)
     p1 = ax.plot(times, rates, color=cent_color, alpha=cent_alpha,
                  **kwargs)
-    refs = [p1, p2]
-    return refs
+
+    return [p1, p2]
 
 
 class TargetedLightcurves():
     """Class to make lightcurves for the targeted search
     
-    Parameters:
-    -----------
-    data_dir: str
-        The directory containing the BTTE/background data
-    min_res: float, optional
-        The minimum resolution of the data. Default is 64 ms
-    lc_color: str, optional
-        The color of the lightcurve. Default is #394264 (a dark blue)
-    bkgd_color: str, optional   
-        The color of the background. Default is firebrick.
-    selection_color: str, optional
-        The color of the event selection highlight. Default is #9a4e0e (orange).        
-    fontsize: int, optional 
-        The font size of the labels. Default is 12
-    
     Public Methods:
-    ---------------
-    plot_channels:
-        Multi-panel plot, each panel showing a channel, summed over detectors
-    plot_detectors:
-        Multi-panel plot, each panel showing a detector, summed over channels
-    plot_summed:
-        Single-panel plot, summed over channels and detectors
-    search_plots:
-        Create the full spread of search plots
+        plot_channels:
+            Multi-panel plot, each panel showing a channel, summed over detectors
+        plot_detectors:
+            Multi-panel plot, each panel showing a detector, summed over channels
+        plot_summed:
+            Single-panel plot, summed over channels and detectors
     """
     def __init__(self, data, t0, min_res=0.064, lc_color='#394264',
                 bkgd_color='firebrick', selection_color='#9a4e0e', fontsize=12):
@@ -836,30 +816,30 @@ class TargetedLightcurves():
 
         for i in range(numdets):
 
-            # Rebin the BTTE data, plot the lightcurve and errorbars
+            # rebin the BTTE data, plot the lightcurve and errorbars
             lc = self._rebin_lc(detectors[i], time_res, event_time, time_range,
                                 **kwargs)
             lcplots[i] = Histo(lc, self._axes[i], color=self._lc_color)
             ebars[i] = HistoErrorbars(lc, self._axes[i], color=self._lc_color,
                                       alpha=0.5)
 
-            # Integrate the background over the energy range and plot
+            # integrate the background over the energy range and plot
             b = self._integrate_bkgd(detectors[i], lc.lo_edges, lc.hi_edges, **kwargs)
             bplots[i] = LightcurveBackground(b, self._axes[i], zorder=1000,
                                              cent_alpha=0.85, err_alpha=0.5, 
                                              color=self._bkgd_color)
 
-            # If there is an event time, plot the highlight
+            # if there is an event time, plot the highlight
             if event_time is not None:
                 event = (event_time, event_time + time_res)
                 selects[i] = self._axes[i].axvspan(*event, color=self._sel_color, 
                                                    alpha=0.2)
 
-            # Set the y-axis limit
+            # set the y-axis limit
             lc = lc.slice(*time_range)
             self._axes[i].set_ylim(0.8*np.min(lc.rates), 1.2*np.max(lc.rates))
 
-            # Annotate the plot
+            # annotate the plot
             self._annotate(self._axes[i], detectors[i], (b.emin[0], b.emax[0]))
        
         if filename is None:
@@ -919,12 +899,12 @@ class TargetedLightcurves():
             ebars[i] = HistoErrorbars(lc, self._axes[i], color=self._lc_color,
                                       alpha=0.5)
 
-            # Integrate the background over the energy range
+            # integrate the background over the energy range
             bkgds = [self._integrate_bkgd(det, lc.lo_edges, lc.hi_edges, **kwargs)
                      for det in detectors]
             b_channel = self.sum_bkgds(bkgds)
         
-            # Plot the channel specific background
+            # plot the channel specific background
             bplots[i] = LightcurveBackground(b_channel, self._axes[i], zorder=1000,
                                              cent_alpha=0.85, err_alpha=0.5, 
                                              color=self._bkgd_color) 
@@ -935,26 +915,137 @@ class TargetedLightcurves():
                 selects[i] = self._axes[i].axvspan(*event, color=self._sel_color, 
                                                    alpha=0.2)
 
-            # Set the y-axis limit
+            # set the y-axis limit
             lc = lc.slice(*time_range)
             self._axes[i].set_ylim(0.8*np.min(lc.rates), 1.2*np.max(lc.rates))
 
-            # Annotate the plot
+            # annotate the plot
             self._annotate(self._axes[i], '%s - %s' % (detectors[0], detectors[-1]), (b_channel.emin[0], b_channel.emax[0]))
         
         if filename is None:
             plt.show()
             return
 
-        # Save the figure
+        # save the figure
         try:
             plt.savefig(filename, dpi=self.dpi*1.333, bbox_inches='tight')
         except ValueError as err:
             print(err)
         plt.close()
+
+    def plot_summed(self, time_res, filename, event_time,
+                    time_range=None, detectors=None, **kwargs):
+        """Single-panel plot, summed over channels and detectors
+
+        Args:
+            time_res (float):
+                Time resolution of the lightcurve.
+                Must be a multiple of the resolution of the data
+            filename (str): The filename to be written to
+            event_time (float, optional): The time of an event of interest
+            time_range (tuple(2), optional):
+                The time range of the data to be plotted.  If set, this overrides
+                the automatically-determined time range.
+            detectors (list, optional):
+                 A list of detectors to be plotted
+            **kwargs:
+                channel_range (tuple(2), optional):
+                    The channel range of the data to be plotted
+                energy_range (tuple(2), optional):
+                    The energy range of the data to be plotted
+        """
+        time_range = self._time_bounds(event_time, time_res, time_range)
+
+        if detectors is None:
+            detectors = self._data.detectors
+
+        # initialize figure
+        self._init_fig(1, time_range, figsize=(12,6))
+        ax = self._axes[0]
+
+        # rebin the data, sum, then plot the lightcurve and errorbars
+        lcs = [self._rebin_lc(det, time_res, event_time, time_range, **kwargs)
+               for det in detectors]
+        lc = lcs[0].sum(lcs)
+        lcplot = Histo(lc, ax, color=self._lc_color)
+        ebars = HistoErrorbars(lc, ax, color=self._lc_color, alpha=0.5)
+
+        # integrate the background over the energy range, sum, and plot
+        bkgds = [self._integrate_bkgd(det, lc.lo_edges, lc.hi_edges, **kwargs)
+                 for det in detectors]
+        b = self.sum_bkgds(bkgds)
+        bplot = LightcurveBackground(b, ax, zorder=1000, cent_alpha=0.85,
+                                     err_alpha=0.5, color=self._bkgd_color)
+
+        # if there is an event time, plot the highlight
+        if event_time is not None:
+            event = (event_time, event_time + time_res)
+            select = ax.axvspan(*event, color=self._sel_color, alpha=0.2)
+
+        # set the y-axis limit
+        lc = lc.slice(*time_range)
+        ax.set_ylim(0.9*np.min(lc.rates), 1.1*np.max(lc.rates))
+
+        # annotate the plot
+        self._annotate(ax, "%s - %s" % (detectors[0], detectors[-1]), (b.emin[0], b.emax[0]), summed_plot=True)
+
+        if filename is None:
+            plt.show()
+            return
+
+        # save the figure
+        try:
+            plt.savefig(filename, dpi=self.dpi, bbox_inches='tight')
+        except ValueError as err:
+            print(err)
+
+        plt.close()
+
+    def sum_bkgds(self, bkgds):
+        """Sum multiple BackgroundRates together if they have the same time
+        range.  Example use would be summing two backgrounds from two detectors.
         
+        Args:
+            bkgds (list of :class:`BackgroundRates`):
+                A list containing the BackgroundRates to be summed
+
+        Returns:
+            (:class:`BackgroundRates`)
+        """
+        rates = np.zeros_like(bkgds[0].rates)
+        rates_var = np.zeros_like(bkgds[0].rates)
+        for bkgd in bkgds:
+            assert bkgd.num_times == bkgds[0].num_times, \
+                "The backgrounds must all have the same support"
+            rates += bkgd.rates
+            rates_var += bkgd.rate_uncertainty ** 2
+
+        # union of energy bounds
+        emin = bkgds[0].emin
+        emax = bkgds[0].emax
+        for bkgd in bkgds[1:]:
+            mask = bkgd.emin < emin
+            emin[mask] = bkgd.emin[mask]
+            mask = bkgd.emax > emax
+            emax[mask] = bkgd.emax[mask]
+
+        # averaged exposure, sampling times
+        exposure = np.mean([bkgd.exposure for bkgd in bkgds], axis=0)
+        tstart = np.mean([bkgd.tstart for bkgd in bkgds], axis=0)
+        tstop = np.mean([bkgd.tstop for bkgd in bkgds], axis=0)
+
+        return BackgroundRates(
+            rates[:, np.newaxis], np.sqrt(rates_var[:, np.newaxis]),
+            tstart, tstop, emin, emax, exposure=exposure)
+
     def _init_fig(self, numplots, time_range, figsize=None):
-        # initialize the figure
+        """Initialize the figure.
+
+        Args:
+            numplots (int): Number of subplots in the figure
+            time_range (tuple(float)): Time interval to plot given as (tstart, tstop)
+            figsize (list): Figure size given as [width, height]
+        """
         if figsize is None:
             figsize = [12, numplots*2]
         fig, axes = plt.subplots(numplots, 1, sharex=True, sharey=False, 
@@ -1047,7 +1138,7 @@ class TargetedLightcurves():
         return lc
         
     def _annotate(self, ax, det, energy_range, summed_plot=False):
-        """ Internal method for annotations of the detector name(s) and energy range shown
+        """Internal method for annotations of the detector name(s) and energy range shown
 
         Args:
             ax (matplotlib.axes): axes where the plot is shown
@@ -1066,111 +1157,6 @@ class TargetedLightcurves():
         ax.annotate('{0:3.0f}-{1:3.0f} keV'.format(*energy_range), xy=(1-x,y),
                     xycoords='axes fraction', horizontalalignment='right',
                     zorder=1000)
-
-    def sum_bkgds(self, bkgds):
-        """Sum multiple BackgroundRates together if they have the same time 
-        range.  Example use would be summing two backgrounds from two detectors.
-        
-        Args:
-            bkgds (list of :class:`BackgroundRates`):
-                A list containing the BackgroundRates to be summed
-        
-        Returns:
-            (:class:`BackgroundRates`)
-        """
-        rates = np.zeros_like(bkgds[0].rates)
-        rates_var = np.zeros_like(bkgds[0].rates)
-        for bkgd in bkgds:
-            assert bkgd.num_times == bkgds[0].num_times, \
-                "The backgrounds must all have the same support"
-            rates += bkgd.rates
-            rates_var += bkgd.rate_uncertainty ** 2
-
-        # union of energy bounds
-        emin = bkgds[0].emin
-        emax = bkgds[0].emax
-        for bkgd in bkgds[1:]:
-            mask = bkgd.emin < emin
-            emin[mask] = bkgd.emin[mask]
-            mask = bkgd.emax > emax
-            emax[mask] = bkgd.emax[mask]
-
-        # averaged exposure, sampling times
-        exposure = np.mean([bkgd.exposure for bkgd in bkgds], axis=0)
-        tstart = np.mean([bkgd.tstart for bkgd in bkgds], axis=0)
-        tstop = np.mean([bkgd.tstop for bkgd in bkgds], axis=0)
-
-        return BackgroundRates(
-            rates[:, np.newaxis], np.sqrt(rates_var[:, np.newaxis]),
-            tstart, tstop, emin, emax, exposure=exposure)
-
-    def plot_summed(self, time_res, filename, event_time,
-                    time_range=None, detectors=None, **kwargs):
-        """Single-panel plot, summed over channels and detectors
-
-        Args:
-            time_res (float):
-                Time resolution of the lightcurve.
-                Must be a multiple of the resolution of the data
-            filename (str): The filename to be written to
-            event_time (float, optional): The time of an event of interest
-            time_range (tuple(2), optional):
-                The time range of the data to be plotted.  If set, this overrides
-                the automatically-determined time range.
-            detectors (list, optional):
-                 A list of detectors to be plotted
-            **kwargs:
-                channel_range (tuple(2), optional):
-                    The channel range of the data to be plotted
-                energy_range (tuple(2), optional):
-                    The energy range of the data to be plotted
-        """
-        time_range = self._time_bounds(event_time, time_res, time_range)
-
-        if detectors is None:
-            detectors = self._data.detectors
-
-        # Initialize figure
-        self._init_fig(1, time_range, figsize=(12,6))
-        ax = self._axes[0]
-        
-        # Rebin the data, sum, then plot the lightcurve and errorbars
-        lcs = [self._rebin_lc(det, time_res, event_time, time_range, **kwargs)
-               for det in detectors]
-        lc = lcs[0].sum(lcs)
-        lcplot = Histo(lc, ax, color=self._lc_color)
-        ebars = HistoErrorbars(lc, ax, color=self._lc_color, alpha=0.5)
-
-        # Integrate the background over the energy range, sum, and plot
-        bkgds = [self._integrate_bkgd(det, lc.lo_edges, lc.hi_edges, **kwargs)
-                 for det in detectors]
-        b = self.sum_bkgds(bkgds)
-        bplot = LightcurveBackground(b, ax, zorder=1000, cent_alpha=0.85, 
-                                     err_alpha=0.5, color=self._bkgd_color)                    
-
-        # If there is an event time, plot the highlight
-        if event_time is not None:
-            event = (event_time, event_time + time_res)
-            select = ax.axvspan(*event, color=self._sel_color, alpha=0.2)
-
-        # Set the y-axis limit
-        lc = lc.slice(*time_range)
-        ax.set_ylim(0.9*np.min(lc.rates), 1.1*np.max(lc.rates))
-
-        # Annotate the plot
-        self._annotate(ax, "%s - %s" % (detectors[0], detectors[-1]), (b.emin[0], b.emax[0]), summed_plot=True)
-
-        if filename is None:
-            plt.show()
-            return
-
-        # save the figure
-        try:
-            plt.savefig(filename, dpi=self.dpi, bbox_inches='tight')
-        except ValueError as err:
-            print(err)
-
-        plt.close()
 
     def _integrate_bkgd(self, detector, tstart, tstop, channel_range=None, energy_range=None):
         """Integrate background over time and channel or energy range.

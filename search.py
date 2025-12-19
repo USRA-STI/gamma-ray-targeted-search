@@ -70,6 +70,12 @@ class TargetedSearch():
             Run the search over a set of timebins
     """
     def __init__(self, config, skygrid):
+        """Class constructor
+
+        Args:
+            config (dict): Search configuration dictionary
+            skygrid (SkyGrid): Grid of sky locations to search
+        """
         self.config = config
         self.skygrid = skygrid
         self.instrument_data = {}
@@ -90,27 +96,27 @@ class TargetedSearch():
             t0 (float): Reference time for the center of the search period
 
         Returns:
-            timebins (list[tuple]): List of tuples representing the start times and durations of each search bin
+            (list[tuple]): List of tuples representing the start times and durations of each search bin
         """
         search_range = self.config['search_range']
 
-        # Durations to search in powers of two
+        # durations to search in powers of two
         log2maxdur = np.round(np.log2(self.config['max_dur']))
         log2mindur = np.round(np.log2(self.config['min_dur']))
         durations = 1.024 * 2. ** np.arange(log2mindur, log2maxdur + 1, 1)
 
-        # Limits of the data interval using the reference instrument
+        # limits of the data interval using the reference instrument
         reference_data = self.instrument_data[self.config['reference_instrument']].data
         data_start = max([data.slice_time((search_range[0] - 0.5 * self.config['max_dur'], 0)).time_range[0] for data in reference_data])
         data_end = min([data.slice_time((0, search_range[1])).time_range[1] for data in reference_data])
 
-        # The search bins at t0 and before
+        # the search bins at t0 and before
         timebins1 = [(t, dur) for dur in durations for t in np.arange(t0, data_start, -self.config.step_size(dur)) if t >= search_range[0] - dur / 2.0]
 
-        # The search bins after t0
+        # the search bins after t0
         timebins2 = [(t, dur) for dur in durations for t in np.arange(t0 + self.config.step_size(dur), data_end, self.config.step_size(dur)) if t + dur / 2.0 <= search_range[-1]]
 
-        # Combine the search windows. Format: (tstart, duration)
+        # combine the search windows as list with format [(tstart1, duration1), (tstart2... )]
         timebins = sorted(timebins1)
         timebins.extend(sorted(timebins2))
 
@@ -154,50 +160,50 @@ class TargetedSearch():
             tstop (float): Float representing the end of the timebin
             sky_mask (bool, optional): Mask obstructed sky locations (Earth, Moon, etc) when True
         """
-        # Always start with the first instrument in the list
+        # always start with the first instrument in the list
         instrument = self.config['instruments'][0]
         instrument_data = self.instrument_data[instrument['name']]
 
-        # Gather counts, background, response, and sky mask matrix for first instrument
+        # gather counts, background, response, and sky mask matrix for first instrument
         counts, background_counts, background_var, good, response_matrix, sky_mask_matrix = \
             instrument_data.integrate(tstart, tstop, sky_mask=sky_mask, channel_mask=instrument.channel_mask)
 
-        # Save the first instrument frame as a reference for other instruments
+        # save the first instrument frame as a reference for other instruments
         reference_frame = instrument_data.response.frame
 
-        # Append remaining instruments
+        # append remaining instruments
         for i in range(1, len(self.config['instruments'])):
-            # Throw error here because this code is untested. There are probably typos.
+            # throw error here because this code is untested. There are probably typos.
             raise NotImplemented("Searching multiple instruments is not implemented yet.")
 
             instrument = self.config['instruments'][i]
             instrument_data = self.instrument_data[instrument['name']]
 
-            # Gather counts, background, response, and sky mask matrix for this instrument
+            # gather counts, background, response, and sky mask matrix for this instrument
             counts_i, background_counts_i, background_var_i, good_i, response_matrix_i, sky_mask_matrix_i = \
                 instrument_data.integrate(tstart, tstop, sky_mask=sky_mask, channel_mask=instrument.channel_mask, reference=(refrence_frame, self.skygrid))
 
-            # Update first instrument shape before stacking
+            # update first instrument shape before stacking
             if i == 1:
                 counts = np.full(response.shape, counts)
                 background_counts = np.full(response.shape, background_counts)
                 background_var = np.full(response.shape, background_var)
                 good = np.full(response.shape, good)
 
-            # Stack this instrument with the others
+            # stack this instrument with the others
             counts = np.hstack([counts, counts_i])
             background_counts = np.hstack([background_counts, background_counts_i])
             background_var = np.hstack([background_var, background_var_i])
             good = np.hstack([good, good_i])
             response_matrix = np.hstack([response_matrix, response_matrix_i])
 
-            # Combine sky masks when present
+            # combine sky masks when present
             if sky_mask_matrix is not None and sky_mask_matrix_i is not None:
                 sky_mask_matrix = sky_mask_matrix | sky_mask_matrix_i
             elif sky_mask_matrix is None and sky_mask_matrix_i is not None:
                 sky_mask_matrix = sky_mask_matrix_i
 
-        # Apply sky mask matrix and account for multi-instrument search shapes
+        # apply sky mask matrix and account for multi-instrument search shapes
         if sky_mask_matrix is not None:
             response_matrix = response_matrix[:, sky_mask_matrix, :]
             if len(counts.shape) > 1:
@@ -208,22 +214,23 @@ class TargetedSearch():
         elif len(counts.shape) > 1:
             good = good[np.newaxis, np.newaxis, :]
 
-        # TO DO: The Likelihood class currently flattens the response_matrix over
-        #        spectral templates x sky position assuming that counts is a 1D vector.
-        #        Need to account for 2D counts shape.
+        # TODO: The Likelihood class currently flattens the response_matrix over
+        #       spectral templates x sky position assuming that counts is a 1D vector.
+        #       Need to account for 2D counts shape.
         self.like = Likelihood(response_matrix.shape[0], self.skygrid.size)
         self.like.calculate(counts, background_counts, background_var, good * response_matrix)
 
         self.like_points = self.skygrid._points[:, sky_mask_matrix] if sky_mask_matrix is not None else self.skygrid._points
         self.like_frame = reference_frame
 
-    def run(self, timebins, time_ref=0.0, sky_mask=True, progress=None):
+    def run(self, timebins, time_ref=0.0, sky_mask=True, progress=None, description="Searching"):
         """Run the search over a set of timebins.
 
         Args:
             timebins (list[tuple]): List of tuples representing the start times and durations of each search bin
             time_ref (float, optional): Reference time for results file
             sky_mask (bool, optional): Mask obstructed sky locations (Earth, Moon, etc) when True
+            description (str, optional): Progress task description
 
         Returns:
             (Results): A Results object with the likelihood result + user calculated fields for each timebin.
@@ -232,7 +239,7 @@ class TargetedSearch():
         results = Results(len(timebins), time_ref=time_ref)
         [calc['results'].resize(len(timebins)) for calc in self._calculations]
 
-        task = None if progress is None else progress.add_task("Searching...", total=len(timebins))
+        task = None if progress is None else progress.add_task(description, total=len(timebins))
 
         for i, (tstart, duration) in enumerate(timebins):
             # compute the likelihood for this timebin

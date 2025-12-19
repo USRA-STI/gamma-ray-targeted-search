@@ -124,21 +124,21 @@ def main():
     protocols = ['HTTPS', 'FTP']
 
     parser = argparse.ArgumentParser("gbm_targeted_search.py", "Script for performing the GBM targeted search")
-    parser.add_argument("-t", "--time", default=None, help="Time for continuous data search.")
-    parser.add_argument("-b", "--burst-number", default=None, help="GBM burst number for on-board trigger search.")
-    parser.add_argument("-f", "--format", type=str, default=None, choices=[None, 'gps', 'fermi', 'datetime'], help="Format of --trigger option.")
-    parser.add_argument("-w", "--search-window-width", default=60, type=float, help="Search window around trigger time in seconds. The search will run from -width/2 until +width/2.")
-    parser.add_argument("--min-dur", default=0.064, type=float, help="Minimum duration of GRB transient in seconds.")
-    parser.add_argument("--max-dur", default=8.192, type=float, help="Maximum duration of GRB transient in seconds.")
-    parser.add_argument("--min-step", default=0.064, type=float, help="Minimum time step size in seconds used to move duration window.")
-    parser.add_argument("--num-steps", default=8, type=int, help="Sets duration window step size using duration/num_steps for steps larger than --min-step.")
-    parser.add_argument("-s", "--skymap", default=None, type=str, help="Optional skymap file.")
-    parser.add_argument("-o", "--results-dir", default=".", type=str, help="Directory for results output.")
-    parser.add_argument("-p", "--protocol", default="HTTPS", type=str, choices=protocols, help="Download Protocol.")
-    parser.add_argument("-x", "--background-window", default=125.0, type=float, help="NaivePossion background window.")
-    parser.add_argument("-y", "--background-poly", default=None, type=float, help="Polynomial background order.")
-    parser.add_argument("-z", "--background-range", default=[-500, 500], nargs="+", type=float, help="Background fit range(s).")
-    parser.add_argument("--flatten", action='store_true', help="Flatten multiorder skymaps.")
+    parser.add_argument('-t', '--time', default=None, help="Time for continuous data search.")
+    parser.add_argument('-b', '--burst-number', default=None, help="GBM burst number for on-board trigger search.")
+    parser.add_argument('-f', '--format', type=str, default=None, choices=[None, 'gps', 'fermi', 'datetime'], help="Format of --trigger option.")
+    parser.add_argument('-w', '--search-window-width', default=60, type=float, help="Search window around trigger time in seconds. The search will run from -width/2 until +width/2.")
+    parser.add_argument('--min-dur', default=0.064, type=float, help="Minimum duration of GRB transient in seconds.")
+    parser.add_argument('--max-dur', default=8.192, type=float, help="Maximum duration of GRB transient in seconds.")
+    parser.add_argument('--min-step', default=0.064, type=float, help="Minimum time step size in seconds used to move duration window.")
+    parser.add_argument('--num-steps', default=8, type=int, help="Sets duration window step size using duration/num_steps for steps larger than --min-step.")
+    parser.add_argument('-s', '--skymap', default=None, type=str, help="Optional skymap file.")
+    parser.add_argument('-o', '--results-dir', default='.', type=str, help="Directory for results output.")
+    parser.add_argument('-p', '--protocol', default='HTTPS', type=str, choices=protocols, help="Download Protocol.")
+    parser.add_argument('-x', '--background-window', default=125.0, type=float, help="NaivePossion background window.")
+    parser.add_argument('-y', '--background-poly', default=None, type=float, help="Polynomial background order.")
+    parser.add_argument('-z', '--background-range', default=[-500, 500], nargs="+", type=float, help="Background fit range(s).")
+    parser.add_argument('--flatten', action='store_true', help="Flatten multiorder skymaps.")
     
     print("\n"  + " ".join(sys.argv) +  "\n")
 
@@ -192,8 +192,10 @@ def main():
 
     trigtime, tte_files, poshist_file = GetData(trigger, gbm_config, "data/gbm", args.protocol)
 
+    print("Preparing data...")
+
     progress.start()
-    task = progress.add_task("Opening TTE..." , total=len(gbm_config['detectors']))
+    task = progress.add_task("  Opening TTE", total=len(gbm_config['detectors']))
 
     tte_data = []
     for i, det_config in enumerate(gbm_config['detectors'].values()):
@@ -206,49 +208,50 @@ def main():
     progress.stop()
     progress.remove_task(task)
 
-    print("Binning TTE for search...")
+    print("  Opening poshist")
+    poshist = GbmPosHist.open(poshist_file)
+    spacecraft_frames = poshist.get_spacecraft_frame()
+
+    print("  Opening response")
+    # retrieve response for hard, normal, soft GRB spectral templates
+    skygrid = SkyGrid(search_config['skygrid_resolution'])
+    response = GbmResponse(gbm_config['detector_names'], skygrid, 'templates/GBM', spacecraft_frames, trigtime.fermi, templates=[0, 1, 2])
+
+    print("  Binning TTE")
     phaiis = DataCollection.from_list(
          ttes.to_phaii(bin_by_time, search_config['time_resolution'], time_ref=0, time_range=search_config['data_range']),
          names=gbm_config['detector_names'])
 
-    print("Fitting background...")
+    print("  Fitting background")
     backfitters = DataCollection.from_list(
         [BackgroundFitter.from_tte(tte.slice_time(search_config['bkgd_range']), NaivePoisson) for tte in ttes],
         names=gbm_config['detector_names'])
     backfitters.fit(window_width=search_config['bkgd_window'], fast=True)
     
     goodness_of_fit = DataCollection.from_list(
-        [FitStatus(len(edges) - 1) for det, edges in gbm_config["channel_edges"].items()],
+        [FitStatus(len(edges) - 1) for det, edges in gbm_config['channel_edges'].items()],
         names=gbm_config['detector_names'])
 
-    print("Opening poshist...")
-    poshist = GbmPosHist.open(poshist_file)
-    spacecraft_frames = poshist.get_spacecraft_frame()
-
-    print("Opening the response...")
-    # Get the response for hard, normal, soft spectral templates
-    skygrid = SkyGrid(search_config['skygrid_resolution'])
-    response = GbmResponse(phaiis.items, skygrid, 'templates/GBM', spacecraft_frames, ttes.get_item("n0").trigtime, templates=[0, 1, 2])
-
-    print("Initializing search...")
+    print("\nRunning search...")
+    print("  Initializing")
     search = TargetedSearch(search_config, skygrid)
     search.add_instrument('gbm', phaiis, backfitters, goodness_of_fit, response)
 
     snr_channels = gbm_config.select_channels({det.name: [3, 4] for det in GbmDetectors.nai()})
-    search.add_calculation([("snr1", "<f8"), ("snr0", "<f8")], calculate_top_snr, instrument="gbm", channels=snr_channels, n=2)
+    search.add_calculation([('snr1', '<f8'), ('snr0', '<f8')], calculate_top_snr, instrument='gbm', channels=snr_channels, n=2)
 
     pe_channels = gbm_config.select_channels({det.name: [0, 1] for det in GbmDetectors.nai()})
-    search.add_calculation([("pe0", "<f8"), ("pe1", "<f8"), ("pe2", "<f8")], calculate_pe_variables, instrument="gbm", channels=pe_channels)
+    search.add_calculation([('pe0', '<f8'), ('pe1', '<f8'), ('pe2', '<f8')], calculate_pe_variables, instrument='gbm', channels=pe_channels)
 
-    search.add_calculation([("in_rock", "<i8")], lambda search, result: search.instrument_data['gbm'].response.in_rock)
+    search.add_calculation([('in_rock', '<i8')], lambda search, result: search.instrument_data['gbm'].response.in_rock)
 
-    search.add_calculation([(f"marginal_flux{i}", "<f8") for i in range(3)] +
-                           [(f"marginal_flux_sig{i}", "<f8") for i in range(3)], calculate_marginal_flux, durations=[1.024])
+    search.add_calculation([(f'marginal_flux{i}', '<f8') for i in range(3)] +
+                           [(f'marginal_flux_sig{i}', '<f8') for i in range(3)], calculate_marginal_flux, durations=[1.024])
 
     timebins = search.get_timebins()
     response.preprocess(timebins)
     progress.start()
-    results = search.run(timebins, progress=progress)
+    results = search.run(timebins, progress=progress, description="  Searching")
     progress.stop()
     progress.remove_task(progress.tasks[0].id)
 
@@ -259,13 +262,13 @@ def main():
     coordinate_sun = get_sun(Time(trigtime, format='fermi')) # TODO: use central time of bin instead of trigtime
 
     results.append_fields(
-        ["ra", "dec", "sun_angle", "earth_angle"],
+        ['ra', 'dec', 'sun_angle', 'earth_angle'],
         [coordinate_max.icrs.ra.radian,
          coordinate_max.icrs.dec.radian,
-         coordinate_sun.separation(coordinate_max, origin_mismatch="ignore").radian,
-         frames.geocenter.separation(coordinate_max, origin_mismatch="ignore").radian]
+         coordinate_sun.separation(coordinate_max, origin_mismatch='ignore').radian,
+         frames.geocenter.separation(coordinate_max, origin_mismatch='ignore').radian]
     )
-    results.append_fields(["in_gti"], [np.ones(results.size, dtype=int)])
+    results.append_fields(['in_gti'], [np.ones(results.size, dtype=int)])
 
     # filter results to produce up to 3 top candidates
     filtered_results = remove_pe(results)
@@ -279,14 +282,15 @@ def main():
         search.calculate_likelihood(result['tstart'], result['tstart'] + result['duration'])
         result['coinclr'] = calculate_coinclr(search, result, args.skymap)
 
-    filtered_results.save(args.results_dir, 'filtered_results.npz')
+    results.save(args.results_dir, "full_results.npz")
+    filtered_results.save(args.results_dir, "filtered_results.npz")
 
     # report the results
-    print('\nFound {} candidates...\n'.format(filtered_results.size))
-    print('Total number of bins: {}'.format(filtered_results.size))
-    print('In GTI: {}'.format(np.sum(filtered_results['in_gti'])))
-    print('Used atmoscat: {}'.format(np.sum(filtered_results['in_rock'])))
-    print('Pre-filtered: {}'.format(np.sum(filtered_results['like_status'] == 2)))
+    print(f"\nFound {filtered_results.size} candidates...\n")
+    print(f"Total number of bins: {filtered_results.size}")
+    print(f"In GTI: {filtered_results['in_gti'].sum()}")
+    print(f"Used atmoscat: {filtered_results['in_rock'].sum()}")
+    print(f"Pre-filtered: {np.sum(filtered_results['like_status'] == 2)}")
     print(
         "--------------------------------------------------------------------------------------------------------------------------------------------------")
     print(
@@ -302,58 +306,58 @@ def main():
         print(
             "%13.3f %7.3f %3d %4d %4d  %5.1f %5.1f %5.1f %5.1f %1d %5.2f %5.1f %5.1f %5.1f %5.1f %5.1f %5.1f %5.1f %8.2f %8.2f %5.1f %5.1f %5.1f" % tuple(values))
 
-    print('\nCreating the following plots:')
+    print("\nCreating the following plots:")
 
-    print('\nOrbital plot...')
-    orbit_filename = os.path.join(args.results_dir, 'Orbit.png')
+    print("\nOrbital plot...")
+    orbit_filename = os.path.join(args.results_dir, "Orbit.png")
     plot_orbit(spacecraft_frames, trigtime, orbit_filename, GbmSaa())
-    print('Done.')
+    print("Done.")
 
-    print('\nWaterfall plots...')
+    print("\nWaterfall plots...")
     w = Waterfall(results, trigtime)
     loglr_filename = os.path.join(args.results_dir, 'Loglr.png')
     w.plot_loglr(loglr_filename, val_min=3.0)
     loglr_spec_filename = os.path.join(args.results_dir, 'Loglr_spec.png')
     w.plot_loglr(loglr_spec_filename, val_min=3.0, spectra=True)
-    print('Done.')
+    print("Done.")
 
-    print('\nLightcurve plots...')
+    print("\nLightcurve plots...")
     nai = list(nai_configs.keys())
     bgo = list(bgo_configs.keys())
     time_range = search_config['search_range']
     lcplotter = TargetedLightcurves(search.instrument_data['gbm'], trigtime)
     for i in range(filtered_results.size):
         progress.start()
-        task = progress.add_task('Lightcurves for Event {}...'.format(i+1), total=12)
+        task = progress.add_task(f"  Lightcurves for Event {i+1}...", total=12)
 
         duration, tstart = filtered_results['duration'][i], filtered_results['tstart'][i]
 
         [(lcplotter.plot_summed(duration, time_range=time_range, event_time=tstart, **kwargs), progress.update(task, advance=1))
          for kwargs in [
-            {'filename': os.path.join(args.results_dir, f'Event{i}_Summed_All_NaI_Chan1-6.png'), 'detectors': nai, 'channel_range': (1, 6)},
-            {'filename': os.path.join(args.results_dir, f'Event{i}_Summed_Right_NaI_Chan3-4.png'), 'detectors': nai[:6], 'channel_range': (3, 4)},
-            {'filename': os.path.join(args.results_dir, f'Event{i}_Summed_Left_NaI_Chan3-4.png'), 'detectors': nai[6:], 'channel_range': (3, 4)},
-            {'filename': os.path.join(args.results_dir, f'Event{i}_Summed_All_BGO_Chan0-3.png'), 'detectors': bgo, 'channel_range': (0, 3)}]]
+            {'filename': os.path.join(args.results_dir, f"Event{i}_Summed_All_NaI_Chan1-6.png"), 'detectors': nai, 'channel_range': (1, 6)},
+            {'filename': os.path.join(args.results_dir, f"Event{i}_Summed_Right_NaI_Chan3-4.png"), 'detectors': nai[:6], 'channel_range': (3, 4)},
+            {'filename': os.path.join(args.results_dir, f"Event{i}_Summed_Left_NaI_Chan3-4.png"), 'detectors': nai[6:], 'channel_range': (3, 4)},
+            {'filename': os.path.join(args.results_dir, f"Event{i}_Summed_All_BGO_Chan0-3.png"), 'detectors': bgo, 'channel_range': (0, 3)}]]
 
         [(lcplotter.plot_channels(duration, time_range=time_range, event_time=tstart, **kwargs), progress.update(task, advance=1))
          for kwargs in [
-            {'filename': os.path.join(args.results_dir, f'Event{i}_Channel_All_NaI_Chan0-7.png'), 'detectors': nai, 'channels': [0, 1, 2, 3, 4, 5, 6, 7]},
-            {'filename': os.path.join(args.results_dir, f'Event{i}_Channel_Right_NaI_Chan0-7.png'), 'detectors': nai[:6], 'channels': [0, 1, 2, 3, 4, 5, 6, 7]},
-            {'filename': os.path.join(args.results_dir, f'Event{i}_Channel_Left_NaI_Chan0-7.png'), 'detectors': nai[6:], 'channels': [0, 1, 2, 3, 4, 5, 6, 7]},
-            {'filename': os.path.join(args.results_dir, f'Event{i}_Channel_All_BGO_Chan0-3.png'), 'detectors': bgo, 'channels': [0, 1, 2, 3]}]]
+            {'filename': os.path.join(args.results_dir, f"Event{i}_Channel_All_NaI_Chan0-7.png"), 'detectors': nai, 'channels': [0, 1, 2, 3, 4, 5, 6, 7]},
+            {'filename': os.path.join(args.results_dir, f"Event{i}_Channel_Right_NaI_Chan0-7.png"), 'detectors': nai[:6], 'channels': [0, 1, 2, 3, 4, 5, 6, 7]},
+            {'filename': os.path.join(args.results_dir, f"Event{i}_Channel_Left_NaI_Chan0-7.png"), 'detectors': nai[6:], 'channels': [0, 1, 2, 3, 4, 5, 6, 7]},
+            {'filename': os.path.join(args.results_dir, f"Event{i}_Channel_All_BGO_Chan0-3.png"), 'detectors': bgo, 'channels': [0, 1, 2, 3]}]]
 
         [(lcplotter.plot_detectors(duration, time_range=time_range, event_time=tstart, **kwargs), progress.update(task, advance=1))
          for kwargs in [
-            {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_NaI_Chan1-6.png'), 'detectors': nai, 'channel_range': (1, 6)},
-            {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_NaI_Chan1-2.png'), 'detectors': nai, 'channel_range': (1, 2)},
-            {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_NaI_Chan3-4.png'), 'detectors': nai, 'channel_range': (3, 4)},
-            {'filename': os.path.join(args.results_dir, f'Event{i}_Detector_All_BGO_Chan1-6.png'), 'detectors': bgo, 'channel_range': (1, 6)}]]
+            {'filename': os.path.join(args.results_dir, f"Event{i}_Detector_All_NaI_Chan1-6.png"), 'detectors': nai, 'channel_range': (1, 6)},
+            {'filename': os.path.join(args.results_dir, f"Event{i}_Detector_All_NaI_Chan1-2.png"), 'detectors': nai, 'channel_range': (1, 2)},
+            {'filename': os.path.join(args.results_dir, f"Event{i}_Detector_All_NaI_Chan3-4.png"), 'detectors': nai, 'channel_range': (3, 4)},
+            {'filename': os.path.join(args.results_dir, f"Event{i}_Detector_All_BGO_Chan1-6.png"), 'detectors': bgo, 'channel_range': (1, 6)}]]
 
         progress.stop()
         progress.remove_task(task)
-    print('Done.')
+    print("Done.")
 
-    print('\nLocalizations...')
+    print("\nLocalizations...")
     for i, result in enumerate(filtered_results):
 
         # Recompute likelihood without sky masking for this timebin
@@ -383,27 +387,27 @@ def main():
         # Remove Earth region
         loc.remove_earth()
 
-        loc.write(args.results_dir, filename='Event{}_healpix.fit'.format(i+1), overwrite=True)
+        loc.write(args.results_dir, filename=f"Event{i+1}_healpix.fit", overwrite=True)
 
         skyplot = EquatorialPlot()
         skyplot.add_localization(loc, clevels=[0.90, 0.50], gradient=False)
-        plt.savefig('Event{}_skymap.png'.format(i+1), dpi=300)
+        plt.savefig(f"Event{i+1}_skymap.png", dpi=300)
         plt.clf()
 
         # combined localization
         if args.skymap is not None:
             region_prob = loc.region_probability(args.skymap) * 100.0
-            print('\t Event {0} Spatial Association: {1:3.1f}%'.format(i+1, region_prob))
+            print(f"  Event {i+1} Spatial Association: {region_prob:3.1f}%")
             if region_prob > 50.0:
                 combined = loc.multiply(loc, args.skymap)
                 combined.write(args.results_dir, 
-                               filename='Event{}_healpix_combined.fit'.format(i+1), overwrite=True)
+                               filename="Event{i+1}_healpix_combined.fit", overwrite=True)
 
                 skyplot = EquatorialPlot()
                 skyplot.add_localization(combined, clevels=[0.9, 0.5], gradient=False)
-                plt.savefig('Event{}_skymap_combined.png'.format(i+1), dpi=300)
+                plt.savefig(f"Event{i+1}_skymap_combined.png", dpi=300)
                 plt.clf()
-    print('Done.')
+    print("Done.")
 
 if __name__ == "__main__":
 

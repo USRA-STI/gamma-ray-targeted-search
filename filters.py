@@ -78,7 +78,7 @@ def remove_dur_spec(results, dur, spec):
 
     return Results.create(results.data[~mask], time_ref=results.time_ref, template_names=results.template_names)
 
-def sky_cut(results, threshold=2):
+def remove_coinclr(results, threshold=2):
     """Select results where coinclr - loglr is larger than threshold.
 
     Args:

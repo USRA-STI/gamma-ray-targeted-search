@@ -81,7 +81,7 @@ class InstrumentData:
             goodness_of_fit (DataCollection[FitStatus]): Data collection with the goodness-of-fit metric
             response (BaseResponse): Instrument response object
         """
-        # Sanity checks
+        # sanity checks
         for i, det in enumerate(data.items):
             match_det = data.items[i] == fitters.items[i] == response.detectors[i]
             match_ebounds = data.ebounds()[i].low_edges() == fitters.get_item(det)._data_obj.ebounds.low_edges() \
@@ -213,7 +213,7 @@ class InstrumentData:
         """
         counts, background_counts, background_var, good = [], [], [], []
 
-        # Iterate over all target sky positions
+        # iterate over all target sky positions
         for i, skypos in enumerate(skygrid._points.T):
 
             # get data at the time offset for this position
