@@ -195,6 +195,26 @@ class Results:
         np.savez(os.path.join(directory, filename), time_ref=self.time_ref,
                  template_names=self.template_names, **{key: self.data[key] for key in self.data.dtype.names}) 
 
+    def filter(self, method, *args, **kwargs):
+        """Filter results according to a method defined as
+
+        def method(results, *args, **kwargs):
+            ...
+            return mask
+
+        where mask is an array of indices to select or a boolean mask.
+
+        Args:
+            method (function): The filter method
+            args (tuple, optional): Positional arguments for the filter method
+            kwargs (dict, optional): Keyword arguments for the filter method
+
+        Returns:
+            (Results)
+        """
+        mask = method(self, *args, **kwargs)
+        return self.create(self.data[mask], time_ref=self.time_ref, template_names=self.template_names)
+
     @classmethod
     def open(cls, filename):
         """Open file containing Results object
@@ -248,10 +268,10 @@ class Results:
         """Append individual field names and data
 
         Args:
-            names (list): List with names of new fields
-            data (list): List with [data1, data2, ...] for each new field
+            names (str|list): Name or list with names of new fields
+            data (np.ndarry|list): Array or list with [data1, data2, ...] for each new field
         """
-        self.data = numpy.lib.recfunctions.append_fields(self.data, names, data)
+        self.data = numpy.lib.recfunctions.append_fields(self.data, names, data, usemask=False)
 
     def append_arrays(self, arrays):
         """Append array with dtypes to data
@@ -261,7 +281,7 @@ class Results:
         """
         if not isinstance(arrays, list):
             arrays = [arrays]
-        self.data = numpy.lib.recfunctions.merge_arrays([self.data] + arrays, flatten=True)
+        self.data = numpy.lib.recfunctions.merge_arrays([self.data] + arrays, flatten=True, usemask=False)
 
     def to_list(self, keys, units=None):
         """Convert to list format. Useful for printing a subset of keys.

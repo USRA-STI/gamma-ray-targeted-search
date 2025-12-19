@@ -270,16 +270,16 @@ def main():
          coordinate_sun.separation(coordinate_max, origin_mismatch='ignore').radian,
          frames.geocenter.separation(coordinate_max, origin_mismatch='ignore').radian]
     )
-    results.append_fields(['in_gti'], [np.ones(results.size, dtype=int)])
+    results.append_fields('in_gti', np.ones(results.size, dtype=int))
 
     # filter results to produce up to 3 top candidates
-    filtered_results = remove_pe(results)
-    filtered_results = downselect(filtered_results, threshold=search_config['min_loglr'], no_empty=True)
-    filtered_results = downselect(filtered_results, combine_spec=False, fixedwin=search_config['win_width'])
-    filtered_results = remove_dur_spec(filtered_results, 8.192, 2)
+    filtered_results = results.filter(remove_pe)
+    filtered_results = filtered_results.filter(downselect, threshold=search_config['min_loglr'], no_empty=True)
+    filtered_results = filtered_results.filter(downselect, combine_spec=False, fixedwin=search_config['win_width'])
+    filtered_results = filtered_results.filter(remove_dur_spec, 8.192, 2)
 
     # add marginalization of likelihood ratio over the skymap prior
-    filtered_results.append_fields(["coinclr"], [np.empty(filtered_results.size, dtype=float)])
+    filtered_results.append_fields("coinclr", np.empty(filtered_results.size, dtype=float))
     for result in filtered_results:
         search.calculate_likelihood(result['tstart'], result['tstart'] + result['duration'])
         result['coinclr'] = calculate_coinclr(search, result, args.skymap)

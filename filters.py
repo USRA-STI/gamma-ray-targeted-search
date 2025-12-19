@@ -33,6 +33,7 @@
 # License.
 #
 import numpy as np
+import numpy.lib.recfunctions
 
 from results import Results
 
@@ -55,7 +56,7 @@ def remove_pe(results, cr1=5, cr2=1, cr2thr=8):
     icr2 = (results['pe0'] / np.maximum(0.1, results['pe2']) < cr2) | \
            (results['pe0'] < cr2thr)
 
-    return Results.create(results.data[(icr1 & icr2)], time_ref=results.time_ref, template_names=results.template_names)
+    return icr1 & icr2
 
 def remove_dur_spec(results, dur, spec):
     """Remove results with matching duration and spectral template.
@@ -74,9 +75,7 @@ def remove_dur_spec(results, dur, spec):
     if not isinstance(spec, int):
         spec = list(results.template_names).index(spec)
 
-    mask = (results['duration'] == dur) & (results['template'] == spec)
-
-    return Results.create(results.data[~mask], time_ref=results.time_ref, template_names=results.template_names)
+    return ~((results['duration'] == dur) & (results['template'] == spec))
 
 def remove_coinclr(results, threshold=2):
     """Select results where coinclr - loglr is larger than threshold.
@@ -91,9 +90,7 @@ def remove_coinclr(results, threshold=2):
     if results.size == 0:
         return results
 
-    mask = (results['coinclr'] - results['loglr']) > threshold
-
-    return Results.create(results.data[mask], time_ref=results.time_ref, templates_names=results.template_names)
+    return (results['coinclr'] - results['loglr']) > threshold
 
 def downselect(results, overlap_factor=0.2, threshold=None, combine_spec=True, 
                fixedwin=0, no_empty=False):
@@ -122,16 +119,16 @@ def downselect(results, overlap_factor=0.2, threshold=None, combine_spec=True,
         (Results): A new Results object without the duration + spectral template.
     """
     if results.size == 0:
-        return results
+        return []
     
+    data = numpy.lib.recfunctions.append_fields(results.data, "downselect_idx", np.arange(results.size))
+
     if threshold:
-        mask = (results['loglr'] >= threshold)
+        mask = (data['loglr'] >= threshold)
         if (mask.sum() == 0) and no_empty:
-            mask = (results['loglr'] == results['loglr'].max())
-        data = results.data[mask]
-    else:
-        data = results.data
-    
+            mask = (data['loglr'] == data['loglr'].max())
+        data = data[mask]
+
     unique_events = []
     sorted_events = data[(-data['loglr']).argsort()]
     
@@ -149,7 +146,5 @@ def downselect(results, overlap_factor=0.2, threshold=None, combine_spec=True,
                     break
         if keep:
             unique_events.append(e1)
-    
-    data = np.array(unique_events, dtype=results.data.dtype)
 
-    return Results.create(data, time_ref=results.time_ref, template_names=results.template_names)
+    return [entry['downselect_idx'] for entry in unique_events]
