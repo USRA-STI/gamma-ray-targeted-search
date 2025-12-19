@@ -108,7 +108,7 @@ def GetData(trigger_id, settings, data_directory, protocol='HTTPS'):
 
     # ensure we have a position history file
     if not len(poshist_files):
-        finder = ContinuousFinder(trigger_id, protocol=protocol)
+        finder = ContinuousFinder(trigtime, protocol=protocol)
         finder.get_poshist(path)
         poshist_files = sorted(glob.glob(poshist_wildcard))
             
@@ -215,7 +215,9 @@ def main():
     print("  Opening response")
     # retrieve response for hard, normal, soft GRB spectral templates
     skygrid = SkyGrid(search_config['skygrid_resolution'])
-    response = GbmResponse(gbm_config['detector_names'], skygrid, 'templates/GBM', spacecraft_frames, trigtime.fermi, templates=[0, 1, 2])
+    response = GbmResponse(gbm_config['detector_names'], skygrid,
+                           os.path.join(basedir, 'templates/GBM'),
+                           spacecraft_frames, trigtime.fermi, templates=[0, 1, 2])
 
     print("  Binning TTE")
     phaiis = DataCollection.from_list(
