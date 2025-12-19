@@ -35,8 +35,6 @@
 import numpy as np
 import numpy.lib.recfunctions
 
-from results import Results
-
 def remove_pe(results, cr1=5, cr2=1, cr2thr=8):
     """Apply phosphorescence event (pe) veto and return a new Results object with the veto applied.
     
@@ -47,7 +45,7 @@ def remove_pe(results, cr1=5, cr2=1, cr2thr=8):
         cr2thr (float): The maximum value of pe_0 for vetoing.
     
     Returns:
-        (Results): A new Results object with the veto applied.
+        (np.ndarray): Array with True for results that pass filter.
     """
     if results.size == 0:
         return results
@@ -67,7 +65,7 @@ def remove_dur_spec(results, dur, spec):
         spec (int, str): Index or name of the spectral template to remove
 
     Returns:
-        (Results): A new Results object without the duration + spectral template.
+        (np.ndarray): Array with True for results that pass filter.
     """
     if results.size == 0:
         return results
@@ -85,7 +83,7 @@ def remove_coinclr(results, threshold=2):
         threshold (float): The threshold applied to coinclr - loglr for candidate selection
 
     Returns:
-        (Results): A new Results object without the duration + spectral template.
+        (np.ndarray): Arry with True for results that pass filter.
     """
     if results.size == 0:
         return results
@@ -116,7 +114,7 @@ def downselect(results, overlap_factor=0.2, threshold=None, combine_spec=True,
         no_empty (bool): Return at least one result when True, regardless of threshold
 
     Returns:
-        (Results): A new Results object without the duration + spectral template.
+        (list): List with indices of results that pass filter.
     """
     if results.size == 0:
         return []
