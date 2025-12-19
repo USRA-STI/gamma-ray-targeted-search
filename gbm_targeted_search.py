@@ -374,31 +374,31 @@ def main():
     print("\nLocalizations...")
     for i, result in enumerate(filtered_results):
 
-        # Recompute likelihood without sky masking for this timebin
+        # recompute likelihood without sky masking for this timebin
         search.calculate_likelihood(result['tstart'], result['tstart'] + result['duration'], sky_mask=False)
 
-        # Compute sky probability for max template
+        # compute sky probability for max template
         prob = np.exp(search.like.llr - np.max(search.like.llr))[result['template'], :]
 
-        # Project to NSIDE 64 healpix
+        # project to NSIDE 64 healpix
         proj_prob, _ = grid_to_healpix(
             prob, search.like_points, search.like_frame, nside_out=64)
 
-        # Upscale to NSIDE 128
+        # upscale to NSIDE 128
         hires_nside = 128
         hires_npix = hp.nside2npix(hires_nside)
         theta, phi = hp.pix2ang(hires_nside, np.arange(hires_npix))
         upscaled_prob = hp.get_interp_val(proj_prob, theta, phi)
 
-        # Build GbmHealpix object
+        # build GbmHealpix object
         loc = GbmHealPix.from_data(upscaled_prob, trigtime=trigtime.fermi,
                                    quaternion=search.like_frame.quaternion, scpos=search.like_frame.obsgeoloc)
 
-        # Apply systematic error
+        # apply systematic error
         systematic = (O3_DGAUSS_Model, result['in_rock'], result['zen'])
         loc = loc.convolve(*systematic)
 
-        # Remove Earth region
+        # remove Earth region
         loc.remove_earth()
 
         loc.write(args.results_dir, filename=f"Event{i+1}_healpix.fit", overwrite=True)
