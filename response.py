@@ -128,7 +128,7 @@ class GbmResponse(BaseResponse):
         self.geo_radius = None
         self.response_matrix = None
 
-        self._preprocessed = {}
+        self._preprocessed = {'load_points': {}}
 
     def preprocess(self, timebins):
         """Method for pre-processing expensive calculations used during

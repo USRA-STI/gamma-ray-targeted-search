@@ -174,7 +174,7 @@ class TargetedSearch():
         # append remaining instruments
         for i in range(1, len(self.config['instruments'])):
             # throw error here because this code is untested. There are probably typos.
-            raise NotImplemented("Searching multiple instruments is not implemented yet.")
+            raise NotImplementedError("Searching multiple instruments is not implemented yet.")
 
             instrument = self.config['instruments'][i]
             instrument_data = self.instrument_data[instrument['name']]
