@@ -26,7 +26,7 @@
 #
 import numpy as np
 
-from astropy.coordinates import SkyCoord
+from astropy.coordinates import SkyCoord, angular_separation
 
 
 class FitStatus:
@@ -156,7 +156,6 @@ class InstrumentData:
             self.counts, self.background_counts, self.background_var, self.good = self.format_data(tstart, tstop)
         else:
             ref_frame, ref_skygrid = reference
-
             ref_az, ref_zen = ref_skygrid._points
             ref_el = 0.5 * np.pi - ref_zen
             print("ref az", ref_az)
@@ -164,6 +163,10 @@ class InstrumentData:
             ref_coords = SkyCoord(ref_az, ref_el, frame=ref_frame, unit='rad').transform_to(self.response.frame)
             print("ref az (transformed)", ref_coords.az.radian)
             print("ref zen (transformed)", ref_coords.el.radian)
+            az, zen = self.response.skygrid._points
+
+            idx = [angular_separation(ref_az[i], ref_el[i], az, 0.5 * np.pi - zen).argmin() for i in np.arange(ref_skygrid.size)]
+            print(idx)
             exit(0)
 
             self.counts, self.background_counts, self.background_var, self.good = self.format_data_by_reference(tstart, tstop, *reference)
