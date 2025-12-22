@@ -155,19 +155,20 @@ class InstrumentData:
         if reference is None:
             self.counts, self.background_counts, self.background_var, self.good = self.format_data(tstart, tstop)
         else:
+            # gather reference skygrid coords
             ref_frame, ref_skygrid = reference
             ref_az, ref_zen = ref_skygrid._points
-            ref_el = 0.5 * np.pi - ref_zen
-            print("ref az", ref_az)
-            print("ref zen", ref_el)
-            ref_coords = SkyCoord(ref_az, ref_el, frame=ref_frame, unit='rad').transform_to(self.response.frame)
-            print("ref az (transformed)", ref_coords.az.radian)
-            print("ref zen (transformed)", ref_coords.el.radian)
-            az, zen = self.response.skygrid._points
 
-            idx = [angular_separation(ref_az[i], ref_el[i], az, 0.5 * np.pi - zen).argmin() for i in np.arange(ref_skygrid.size)]
-            print(idx)
-            exit(0)
+            # transform to response frame
+            coords = SkyCoord(ref_az, 0.5 * np.pi - ref_zen, frame=ref_frame, unit='rad').transform_to(self.response.frame)
+            transformed_az, transformed_el = coords.az.radian, coords.el.radian
+
+            # select nearest response point for each transformed coord
+            az, zen = self.response.skygrid._points
+            idx = [angular_separation(transformed_az[i], transformed_el[i], az, 0.5 * np.pi - zen).argmin() for i in np.arange(ref_skygrid.size)]
+
+            self.response_matrix = self.response_matrix[:, idx, :]
+            self.sky_mask_matrix = self.sky_mask_matrix[idx] if sky_mask else None
 
             self.counts, self.background_counts, self.background_var, self.good = self.format_data_by_reference(tstart, tstop, *reference)
 
