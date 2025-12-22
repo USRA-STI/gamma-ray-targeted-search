@@ -26,6 +26,8 @@
 #
 import numpy as np
 
+from astropy.coordinates import SkyCoord
+
 
 class FitStatus:
     """Placeholder class for fit status behavior
@@ -153,7 +155,17 @@ class InstrumentData:
         if reference is None:
             self.counts, self.background_counts, self.background_var, self.good = self.format_data(tstart, tstop)
         else:
-            # TODO: rotate response_matrix to the reference frame
+            ref_frame, ref_skygrid = reference
+
+            ref_az, ref_zen = ref_skygrid._points
+            ref_el = 0.5 * np.pi - ref_zen
+            print("ref az", ref_az)
+            print("ref zen", ref_el)
+            ref_coords = SkyCoord(ref_az, ref_el, frame=ref_frame, unit='rad').transform_to(self.response.frame)
+            print("ref az (transformed)", ref_coords.az.radian)
+            print("ref zen (transformed)", ref_coords.el.radian)
+            exit(0)
+
             self.counts, self.background_counts, self.background_var, self.good = self.format_data_by_reference(tstart, tstop, *reference)
 
         # remove masked channels when requested

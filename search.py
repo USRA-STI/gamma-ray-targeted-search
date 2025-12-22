@@ -28,7 +28,6 @@ import time
 import numpy as np
 
 from rich.progress import track
-from astropy.coordinates import SkyCoord
 from gdt.core.data_primitives import TimeEnergyBins
 
 from likelihood import Likelihood
@@ -173,15 +172,13 @@ class TargetedSearch():
 
         # append remaining instruments
         for i in range(1, len(self.config['instruments'])):
-            # throw error here because this code is untested. There are probably typos.
-            raise NotImplementedError("Searching multiple instruments is not implemented yet.")
 
             instrument = self.config['instruments'][i]
             instrument_data = self.instrument_data[instrument['name']]
 
             # gather counts, background, response, and sky mask matrix for this instrument
             counts_i, background_counts_i, background_var_i, good_i, response_matrix_i, sky_mask_matrix_i = \
-                instrument_data.integrate(tstart, tstop, sky_mask=sky_mask, channel_mask=instrument.channel_mask, reference=(refrence_frame, self.skygrid))
+                instrument_data.integrate(tstart, tstop, sky_mask=sky_mask, channel_mask=instrument.channel_mask, reference=(reference_frame, self.skygrid))
 
             # update first instrument shape before stacking
             if i == 1:
