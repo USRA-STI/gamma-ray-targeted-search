@@ -70,7 +70,7 @@ class InstrumentData:
         sky_mask (np.ndarray): Array with visible sky positions for the current integration interval
 
     Public Methods:
-        get_timebin_offset: Computes time-of-flight from a reference frame to this instrument given a sky location
+        get_time_offset: Computes time-of-flight from a reference frame to this instrument given a sky location
         format_data: Retrieve data counts, background counts, background variance, and goodness of fit for a time interval
         format_data_by_reference: Similar to format_data, but the time interval is calculated relative to another instrument
     """
@@ -120,12 +120,13 @@ class InstrumentData:
         """list[Ebounds] representing the energy bounds of each detector in the instrument"""
         return self.data.ebounds()
 
-    def get_timebin_offset(self, frame, location):
-        """Computes time-of-flight from a reference frame to this instrument given a sky location.
+    def get_time_offset(self, frame, coord):
+        """Computes time-of-flight to this instrument from
+        a reference coordinate (sky location + frame).
 
         Args:
-            frame (SpacecraftFrame): Frame object with the position of a reference instrument
-            location (tuple): Sky location
+            frame (SpacecraftFrame): Frame object with the instrument position and orientation
+            location (tuple): Sky location from a reference instrument
 
         Returns:
             (float or np.ndarray)
@@ -149,28 +150,57 @@ class InstrumentData:
             tuple: Tuple with arrays for counts, background counts, background variance,
                    good fit status, response matrix, and sky mask matrix
         """
-        self.response_matrix = self.response.load_response(tstart, tstop)
-        self.sky_mask_matrix = self.response.sky_mask() if sky_mask else None
-
         if reference is None:
+            # retrieve direct response and counts
+            self.response_matrix = self.response.load_response(tstart, tstop)
+            self.sky_mask_matrix = self.response.sky_mask() if sky_mask else None
             self.counts, self.background_counts, self.background_var, self.good = self.format_data(tstart, tstop)
         else:
-            # gather reference skygrid coords
+            # load approximate response frame for distance calculation
+            self.response.load_response(tstart, tstop)
+            approx_frame = self.response.frame
+
+            # build exact response matrix and counts using time offset relative to reference instrument
             ref_frame, ref_skygrid = reference
-            ref_az, ref_zen = ref_skygrid._points
+            ref_coord = SkyCoord(ref_skygrid._points[0], 0.5 * np.pi - ref_skygrid._points[1], frame=ref_frame, unit='rad')
 
-            # transform to response frame
-            coords = SkyCoord(ref_az, 0.5 * np.pi - ref_zen, frame=ref_frame, unit='rad').transform_to(self.response.frame)
-            transformed_az, transformed_el = coords.az.radian, coords.el.radian
+            response_matrix, sky_mask_matrix = [], []
+            counts, background_counts, background_var, good = [], [], [], []
 
-            # select nearest response point for each transformed coord
-            az, zen = self.response.skygrid._points
-            idx = [angular_separation(transformed_az[i], transformed_el[i], az, 0.5 * np.pi - zen).argmin() for i in np.arange(ref_skygrid.size)]
+            # iterate over all reference positions
+            for coord in ref_coord:
 
-            self.response_matrix = self.response_matrix[:, idx, :]
-            self.sky_mask_matrix = self.sky_mask_matrix[idx] if sky_mask else None
+                # get data at the time offset for this position
+                offset = self.get_time_offset(approx_frame, coord)
+                data_at_offset = self.format_data(tstart + offset, tstop + offset)
 
-            self.counts, self.background_counts, self.background_var, self.good = self.format_data_by_reference(tstart, tstop, *reference)
+                # store for output
+                counts.append(data_at_offset[0])
+                background_counts.append(data_at_offset[1])
+                background_var.append(data_at_offset[2])
+                good.append(data_at_offset[3])
+
+                # get response at the time offset for this position
+                response_at_offset = self.response.load_response(tstart + offset, tstop + offset)
+
+                # transform coord into the response frame
+                transformed_coord = coord.transform_to(self.response.frame)
+
+                # select nearest response point for each transformed coord
+                az, zen = self.response.skygrid._points
+                i = angular_separation(transformed_coord.az.radian, transformed_coord.el.radian,
+                                        az, 0.5 * np.pi - zen).argmin()
+
+                response_matrix.append(response_at_offset[:, i, :])
+                if sky_mask:
+                    sky_mask_matrix.append(self.response.sky_mask()[i])
+
+            self.counts = np.array(counts)
+            self.background_counts = np.array(background_counts)
+            self.background_var = np.array(background_var)
+            self.good = np.array(good)
+            self.response_matrix = np.array(good)
+            self.sky_mask_matrix = np.array(sky_mask_matrix) if sky_mask else None
 
         # remove masked channels when requested
         if channel_mask is not None and sum(channel_mask) < self.counts.shape[-1]:
@@ -208,38 +238,3 @@ class InstrumentData:
             good.append(self.goodness_of_fit.get_item(det).status(tstart, tstop))
 
         return np.ravel(counts), np.ravel(background_counts), np.ravel(background_var), np.ravel(good)
-
-    def format_data_by_reference(self, tstart, tstop, frame, skygrid):
-        """Formats the counts, background counts, background variance for searches that
-        use another instrument as the reference frame.
-
-        TODO:
-            1. Implement get_timebin_offset
-            2. Update Likelihood._flatten_data to handle case where counts
-               has the shape (nsky, ndetector_channels) instead of (ndetector_channels)
-
-        Args:
-            tstart (float): Start of the time bin
-            tstop (float): End of the time bin
-            frame (SpacecraftFrame): The frame of the reference instrument
-            skygrid (Skygrid): The skygrid we are searching over, from the scanner
-
-        Returns:
-            (tuple[ndarray]): A tuple with counts, background counts, background variance, and background goodness-of-fit
-        """
-        counts, background_counts, background_var, good = [], [], [], []
-
-        # iterate over all target sky positions
-        for i, skypos in enumerate(skygrid._points.T):
-
-            # get data at the time offset for this position
-            offset = self.get_timebin_offset(frame, skypos)
-            data_at_offset = self.format_data(tstart + offset, tstop + offset)
-
-            # store for output
-            counts.append(data_at_offset[0])
-            background_counts.append(data_at_offset[1])
-            background_var.append(data_at_offset[2])
-            good.append(data_at_offset[3])
-
-        return np.array(counts), np.array(background_counts), np.array(background_var), np.array(good)
