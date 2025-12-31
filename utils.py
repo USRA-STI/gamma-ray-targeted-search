@@ -34,9 +34,11 @@
 #
 import numpy as np
 import healpy as hp
+import astropy.constants
 
 from astropy import units as u
 from astropy.coordinates import SkyCoord, angular_separation
+from scipy.spatial.transform import Rotation
 
 from gdt.core.data_primitives import EventList, Gti
 from gdt.core.tte import PhotonList
@@ -218,3 +220,37 @@ def update_tte_trigtime(tte, t0):
     return PhotonList.from_data(data, gti=gti, trigger_time=t0,
                                 event_deadtime=tte.event_deadtime,
                                 overflow_deadtime=tte.overflow_deadtime)
+
+def relative_time_offset(frame, coord):
+    """Computes time-of-flight to a SpacecraftFrame from a
+    a reference coordinate (sky location + frame).
+
+    Args:
+        coord (SkyCoord): Sky location from a reference frame
+        frame (SpacecraftFrame): Frame object with the instrument position and orientation
+
+    Returns:
+        (np.ndarray)
+    """
+    d_xyz = frame.obsgeoloc.xyz.value - coord.obsgeoloc.xyz.value
+    rot = Rotation.from_quat(coord.quaternion)
+
+    d_xyz_prime = rot.inv().apply(d_xyz.T)
+    if d_xyz_prime.ndim == 1:
+        d_xyz_prime = d_xyz_prime.reshape(1, -1)
+
+    # total distance to center of frame
+    D = np.linalg.norm(d_xyz_prime)
+
+    # angular location for center of frame relative to coord
+    el = np.arcsin(np.clip(d_xyz_prime[:, 2] / D, -1, 1))
+    az = np.arctan2(d_xyz_prime[:, 1], d_xyz_prime[:, 0])
+    mask = (az < 0.0)
+    az[mask] += 2.0 * np.pi
+
+    # angular separation between frame and coord
+    angle = angular_separation(az, el, coord.az.radian, coord.el.radian)
+    print(np.degrees(angle))
+
+    # light travel time from reference instrument to frame
+    return -(D * np.cos(angle) / astropy.constants.c).value
