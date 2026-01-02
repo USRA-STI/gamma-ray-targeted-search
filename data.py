@@ -142,7 +142,7 @@ class InstrumentData:
             self.counts, self.background_counts, self.background_var, self.good = self.format_data(tstart, tstop)
         else:
             # load approximate response frame for distance calculation
-            self.response.load_response(tstart, tstop)
+            approx_matrix = self.response.load_response(tstart, tstop)
             approx_frame = self.response.frame
 
             # get time offsets for each search location in frame of the reference instrument
@@ -152,12 +152,13 @@ class InstrumentData:
 
             # iterate over all reference positions to build exact response matrix
             # and counts using time offset relative to reference instrument
-            response_matrix, sky_mask_matrix = [], []
+            shape = (approx_matrix.shape[0], ref_coord.size, approx_matrix.shape[2])
+            response_matrix, sky_mask_matrix = np.empty(shape, dtype=np.float64), []
             counts, background_counts, background_var, good = [], [], [], []
-            for coord, offset in zip(ref_coord, offsets):
+            for i, coord in enumerate(ref_coord):
 
                 # get data at the time offset for this position
-                data_at_offset = self.format_data(tstart + offset, tstop + offset)
+                data_at_offset = self.format_data(tstart + offsets[i], tstop + offsets[i])
 
                 # store for output
                 counts.append(data_at_offset[0])
@@ -166,25 +167,26 @@ class InstrumentData:
                 good.append(data_at_offset[3])
 
                 # get response at the time offset for this position
-                response_at_offset = self.response.load_response(tstart + offset, tstop + offset)
+                response_at_offset = self.response.load_response(tstart + offsets[i], tstop + offsets[i])
 
                 # transform coord into the response frame
                 transformed_coord = coord.transform_to(self.response.frame)
 
                 # select nearest response point for each transformed coord
                 az, zen = self.response.skygrid._points
-                i = angular_separation(transformed_coord.az.radian, transformed_coord.el.radian,
+                j = angular_separation(transformed_coord.az.radian, transformed_coord.el.radian,
                                         az, 0.5 * np.pi - zen).argmin()
 
-                response_matrix.append(response_at_offset[:, i, :])
+                response_matrix[:, i, :] = response_at_offset[:, j, :]
+
                 if sky_mask:
-                    sky_mask_matrix.append(self.response.sky_mask()[i])
+                    sky_mask_matrix.append(self.response.sky_mask()[j])
 
             self.counts = np.array(counts)
             self.background_counts = np.array(background_counts)
             self.background_var = np.array(background_var)
             self.good = np.array(good)
-            self.response_matrix = np.array(good)
+            self.response_matrix = response_matrix
             self.sky_mask_matrix = np.array(sky_mask_matrix) if sky_mask else None
 
         # remove masked channels when requested

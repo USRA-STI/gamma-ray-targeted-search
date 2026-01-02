@@ -189,17 +189,18 @@ class TargetedSearch():
 
             # update first instrument shape before stacking
             if i == 1:
-                counts = np.full(response.shape, counts)
-                background_counts = np.full(response.shape, background_counts)
-                background_var = np.full(response.shape, background_var)
-                good = np.full(response.shape, good)
+                shape = (self.skygrid.size, counts.size)
+                counts = np.full(shape, counts)
+                background_counts = np.full(shape, background_counts)
+                background_var = np.full(shape, background_var)
+                good = np.full(shape, good)
 
             # stack this instrument with the others
             counts = np.hstack([counts, counts_i])
             background_counts = np.hstack([background_counts, background_counts_i])
             background_var = np.hstack([background_var, background_var_i])
             good = np.hstack([good, good_i])
-            response_matrix = np.hstack([response_matrix, response_matrix_i])
+            response_matrix = np.concatenate([response_matrix, response_matrix_i], -1)
 
             # combine sky masks when present
             if sky_mask_matrix is not None and sky_mask_matrix_i is not None:
@@ -211,12 +212,12 @@ class TargetedSearch():
         if sky_mask_matrix is not None:
             response_matrix = response_matrix[:, sky_mask_matrix, :]
             if len(counts.shape) > 1:
-                counts = counts[:, sky_mask_matrix, :]
-                background_counts = background_counts[:, sky_mask_matrix, :]
-                background_var = background_car[:, sky_mask_matrix, :]
-                good = good[:, sky_mask_matrix, :]
+                counts = counts[sky_mask_matrix, :]
+                background_counts = background_counts[sky_mask_matrix, :]
+                background_var = background_var[sky_mask_matrix, :]
+                good = good[sky_mask_matrix, :]
         elif len(counts.shape) > 1:
-            good = good[np.newaxis, np.newaxis, :]
+            good = good[np.newaxis, :]
 
         # TODO: The Likelihood class currently flattens the response_matrix over
         #       spectral templates x sky position assuming that counts is a 1D vector.
