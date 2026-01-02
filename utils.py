@@ -232,7 +232,7 @@ def relative_time_offset(frame, coord):
     Returns:
         (np.ndarray)
     """
-    d_xyz = frame.obsgeoloc.xyz.value - coord.obsgeoloc.xyz.value
+    d_xyz = coord.obsgeoloc.xyz.value - frame.obsgeoloc.xyz.value
     rot = Rotation.from_quat(coord.quaternion)
 
     d_xyz_prime = rot.inv().apply(d_xyz.T)
@@ -250,7 +250,6 @@ def relative_time_offset(frame, coord):
 
     # angular separation between frame and coord
     angle = angular_separation(az, el, coord.az.radian, coord.el.radian)
-    print(np.degrees(angle))
 
     # light travel time from reference instrument to frame
-    return -(D * np.cos(angle) / astropy.constants.c).value
+    return (D * np.cos(angle) / astropy.constants.c).value
