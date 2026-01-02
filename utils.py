@@ -232,7 +232,7 @@ def relative_time_offset(frame, coord):
     Returns:
         (np.ndarray)
     """
-    d_xyz = coord.obsgeoloc.xyz.value - frame.obsgeoloc.xyz.value
+    d_xyz = coord.obsgeoloc.xyz - frame.obsgeoloc.xyz
     rot = Rotation.from_quat(coord.quaternion)
 
     d_xyz_prime = rot.inv().apply(d_xyz.T)
@@ -241,6 +241,8 @@ def relative_time_offset(frame, coord):
 
     # total distance to center of frame
     D = np.linalg.norm(d_xyz_prime)
+    if D == 0.0:
+        return np.zeros_like(coord.az.radian)
 
     # angular location for center of frame relative to coord
     el = np.arcsin(np.clip(d_xyz_prime[:, 2] / D, -1, 1))
