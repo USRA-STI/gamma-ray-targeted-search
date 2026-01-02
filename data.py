@@ -26,6 +26,7 @@
 #
 import numpy as np
 
+from utils import relative_time_offset
 from astropy.coordinates import SkyCoord, angular_separation
 
 
@@ -70,7 +71,6 @@ class InstrumentData:
         sky_mask (np.ndarray): Array with visible sky positions for the current integration interval
 
     Public Methods:
-        get_time_offset: Computes time-of-flight from a reference frame to this instrument given a sky location
         format_data: Retrieve data counts, background counts, background variance, and goodness of fit for a time interval
         format_data_by_reference: Similar to format_data, but the time interval is calculated relative to another instrument
     """
@@ -120,21 +120,6 @@ class InstrumentData:
         """list[Ebounds] representing the energy bounds of each detector in the instrument"""
         return self.data.ebounds()
 
-    def get_time_offset(self, frame, coord):
-        """Computes time-of-flight to this instrument from
-        a reference coordinate (sky location + frame).
-
-        Args:
-            frame (SpacecraftFrame): Frame object with the instrument position and orientation
-            location (tuple): Sky location from a reference instrument
-
-        Returns:
-            (float or np.ndarray)
-        """
-        # TODO Calculate time-of-flight from reference frame to the current instrument frame
-        #      based on a plane wave coming from location.
-        return 0
-
     def integrate(self, tstart, tstop, reference=None, sky_mask=True, channel_mask=None):
         """Method to integrate data and responses over time interval [tstart, tstop]
 
@@ -160,18 +145,18 @@ class InstrumentData:
             self.response.load_response(tstart, tstop)
             approx_frame = self.response.frame
 
-            # build exact response matrix and counts using time offset relative to reference instrument
+            # get time offsets for each search location in frame of the reference instrument
             ref_frame, ref_skygrid = reference
             ref_coord = SkyCoord(ref_skygrid._points[0], 0.5 * np.pi - ref_skygrid._points[1], frame=ref_frame, unit='rad')
+            offsets = relative_time_offset(approx_frame, ref_coord)
 
+            # iterate over all reference positions to build exact response matrix
+            # and counts using time offset relative to reference instrument
             response_matrix, sky_mask_matrix = [], []
             counts, background_counts, background_var, good = [], [], [], []
-
-            # iterate over all reference positions
-            for coord in ref_coord:
+            for coord, offset in zip(ref_coord, offsets):
 
                 # get data at the time offset for this position
-                offset = self.get_time_offset(approx_frame, coord)
                 data_at_offset = self.format_data(tstart + offset, tstop + offset)
 
                 # store for output
