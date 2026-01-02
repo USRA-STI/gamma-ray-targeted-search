@@ -84,7 +84,7 @@ class TestMethods(unittest.TestCase):
 
         dt = utils.relative_time_offset(frame, ref_coord)
 
-        self.assertAlmostEqual(dt[0], -(ref_distance / c).value)
-        self.assertAlmostEqual(dt[1], 0, 3)
-        self.assertAlmostEqual(dt[2], (ref_distance / c).value)
-        self.assertAlmostEqual(dt[3], 0, 3)
+        self.assertAlmostEqual(dt[0], -(ref_distance / c).value) # plane wave arrives at Earth center first
+        self.assertAlmostEqual(dt[1], 0.0, 3)                    # perpendicular to both frames
+        self.assertAlmostEqual(dt[2], (ref_distance / c).value)  # plane wave arrives at reference frame first
+        self.assertAlmostEqual(dt[3], 0.0, 3)                    # perpendicular to both frames
