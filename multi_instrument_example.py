@@ -122,4 +122,7 @@ for inst_config in [inst_config1, inst_config2]:
 
     search.add_instrument(inst_config['name'], ttes, backfitters, goodness_of_fit, response)
 
-search.calculate_likelihood(0.0, 1.024, sky_mask=True)
+search.calculate_likelihood(1.984 - 0.256, 1.984 + 0.256, sky_mask=True)
+
+az_max, zen_max = search.like_points[:, search.like.max_location]
+print("Best-fit (az %.1f deg, zen %.1f deg) marginal llr %.2f" % (np.degrees(az_max), np.degrees(zen_max), search.like.marginal_llr))
