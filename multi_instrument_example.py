@@ -72,7 +72,7 @@ nai2 = ['n6', 'n7', 'n8', 'n9', 'na', 'nb']
 config2 = {det: {'channel_edges': [0, 8, 20, 33, 51, 85, 106, 127, 128], 'search_channels': [1, 2, 3, 4, 5, 6]} for det in nai2}
 inst_config2 = InstrumentConfiguration('instrument2', config2)
 
-search_config = SearchConfiguration(instruments=[inst_config1, inst_config2])
+search_config = SearchConfiguration(instruments=[inst_config1, inst_config2], skygrid_resolution=45.0)
 search_config.settings.update({
     'win_width': 60,
     'min_loglr': 5,
@@ -107,7 +107,7 @@ for inst_config in [inst_config1, inst_config2]:
     spacecraft_frames = poshist.get_spacecraft_frame()
 
     print(f"    Opening Response")
-    response = GbmResponse(inst_config['detector_names'], skygrid, 'templates/GBM',
+    response = GbmResponse(inst_config['detector_names'], SkyGrid(5.0), 'templates/GBM',
                            spacecraft_frames, trigtime.fermi, templates=[0, 1, 2])
 
     print(f"    Fitting background")

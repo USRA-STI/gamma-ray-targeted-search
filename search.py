@@ -28,13 +28,12 @@ import time
 import numpy as np
 
 from rich.progress import track
+from astropy.coordinates import angular_separation
 from gdt.core.data_primitives import TimeEnergyBins
 
 from likelihood import Likelihood
 from data import InstrumentData
 from results import Results
-
-import utils
 
 
 class TargetedSearch():
@@ -166,6 +165,14 @@ class TargetedSearch():
         # gather counts, background, response, and sky mask matrix for first instrument
         counts, background_counts, background_var, good, response_matrix, sky_mask_matrix = \
             instrument_data.integrate(tstart, tstop, sky_mask=sky_mask, channel_mask=instrument.channel_mask)
+
+        # if different, project the response locations onto the search skygrid
+        if response_matrix.shape[1] != self.skygrid.size:
+            i = [angular_separation(instrument_data.response.skygrid.radians[0], 0.5 * np.pi - instrument_data.response.skygrid.radians[1],
+                                    pnt[0], 0.5 * np.pi - pnt[1]).argmin() for pnt in self.skygrid.radians.T]
+            response_matrix = response_matrix[:, i, :]
+            if sky_mask_matrix is not None:
+                sky_mask_matrix = sky_mask_matrix[i]
 
         # save the first instrument frame as a reference for other instruments
         reference_frame = instrument_data.response.frame
