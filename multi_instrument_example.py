@@ -72,7 +72,7 @@ nai2 = ['n6', 'n7', 'n8', 'n9', 'na', 'nb']
 config2 = {det: {'channel_edges': [0, 8, 20, 33, 51, 85, 106, 127, 128], 'search_channels': [1, 2, 3, 4, 5, 6]} for det in nai2}
 inst_config2 = InstrumentConfiguration('instrument2', config2)
 
-search_config = SearchConfiguration(instruments=[inst_config1, inst_config2], skygrid_resolution=45.0)
+search_config = SearchConfiguration(instruments=[inst_config1, inst_config2], skygrid_resolution=5.0)
 search_config.settings.update({
     'win_width': 60,
     'min_loglr': 5,
@@ -89,7 +89,7 @@ search = TargetedSearch(search_config, skygrid)
 
 trigtime = Time(524666469.429, format='fermi')
 
-print("Preparing data...")
+print("\nPreparing data...")
 for inst_config in [inst_config1, inst_config2]:
 
     print(f"  {inst_config['name']}")
@@ -122,7 +122,9 @@ for inst_config in [inst_config1, inst_config2]:
 
     search.add_instrument(inst_config['name'], ttes, backfitters, goodness_of_fit, response)
 
+wallt = time.time()
 search.calculate_likelihood(1.984 - 0.256, 1.984 + 0.256, sky_mask=True)
+print(f"\nCompleted likelihood in {time.time() - wallt:.1f} sec")
 
 az_max, zen_max = search.like_points[:, search.like.max_location]
-print("Best-fit (az %.1f deg, zen %.1f deg) marginal llr %.2f" % (np.degrees(az_max), np.degrees(zen_max), search.like.marginal_llr))
+print("\nBest-fit (az %.1f deg, zen %.1f deg) marginal llr %.2f" % (np.degrees(az_max), np.degrees(zen_max), search.like.marginal_llr))
