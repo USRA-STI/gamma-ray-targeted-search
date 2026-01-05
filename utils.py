@@ -232,6 +232,7 @@ def relative_time_offset(frame, coord):
     Returns:
         (np.ndarray)
     """
+    # TODO: figure out why this calculation differs a small amount from geocenter angle in GCRS.
     d_xyz = coord.obsgeoloc.xyz - frame.obsgeoloc.xyz
     rot = Rotation.from_quat(coord.quaternion)
 
