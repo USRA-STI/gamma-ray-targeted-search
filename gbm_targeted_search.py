@@ -119,6 +119,49 @@ def GetData(trigger_id, settings, data_directory, protocol='HTTPS'):
     # Need to work on crossover at day boundary.
     return trigtime, tte_files, poshist_files[0]
 
+def GetGbmLocalization(search, result, time_ref, include_systematic=True):
+    """Compute GBM location with systematic error modeled as
+    a double Gaussian (core + tail) shape.
+
+    Args:
+        search (TargetedSearch): Search object
+        result (Results): Result object
+        time_ref (Time): Reference time for the tstart value of result
+        include_systematic (bool): Include systematic error when True
+
+    Returns:
+        (GbmHealPix)
+    """
+    # recompute likelihood without sky masking for this timebin
+    search.calculate_likelihood(result['tstart'], result['tstart'] + result['duration'], sky_mask=False)
+
+    # compute sky probability for max template
+    prob = np.exp(search.like.llr - np.max(search.like.llr))[result['template'], :]
+
+    # project to NSIDE 64 healpix
+    proj_prob, _ = grid_to_healpix(
+        prob, search.like_points, search.like_frame, nside_out=64)
+
+    # upscale to NSIDE 128
+    hires_nside = 128
+    hires_npix = hp.nside2npix(hires_nside)
+    theta, phi = hp.pix2ang(hires_nside, np.arange(hires_npix))
+    upscaled_prob = hp.get_interp_val(proj_prob, theta, phi)
+
+    # build GbmHealpix object
+    loc = GbmHealPix.from_data(upscaled_prob, trigtime=time_ref.fermi + result['tstart'],
+                               quaternion=search.like_frame.quaternion, scpos=search.like_frame.obsgeoloc)
+
+    # apply systematic error
+    if include_systematic:
+        systematic = (O3_DGAUSS_Model, result['in_rock'], result['zen'])
+        loc = loc.convolve(*systematic)
+
+    # remove Earth region
+    loc.remove_earth()
+
+    return loc
+
 def main():
 
     protocols = ['HTTPS', 'FTP']
@@ -262,6 +305,10 @@ def main():
     search.add_calculation([(f'marginal_flux{i}', '<f8') for i in range(3)] +
                            [(f'marginal_flux_sig{i}', '<f8') for i in range(3)], calculate_marginal_flux, durations=[1.024])
 
+
+    search.calculate_likelihood(1.984 - 0.256, 1.984 + 0.256, sky_mask=True)
+    data = search.instrument_data['gbm']
+
     timebins = search.get_timebins()
     response.preprocess(timebins)
     progress.start()
@@ -373,34 +420,7 @@ def main():
 
     print("\nLocalizations...")
     for i, result in enumerate(filtered_results):
-
-        # recompute likelihood without sky masking for this timebin
-        search.calculate_likelihood(result['tstart'], result['tstart'] + result['duration'], sky_mask=False)
-
-        # compute sky probability for max template
-        prob = np.exp(search.like.llr - np.max(search.like.llr))[result['template'], :]
-
-        # project to NSIDE 64 healpix
-        proj_prob, _ = grid_to_healpix(
-            prob, search.like_points, search.like_frame, nside_out=64)
-
-        # upscale to NSIDE 128
-        hires_nside = 128
-        hires_npix = hp.nside2npix(hires_nside)
-        theta, phi = hp.pix2ang(hires_nside, np.arange(hires_npix))
-        upscaled_prob = hp.get_interp_val(proj_prob, theta, phi)
-
-        # build GbmHealpix object
-        loc = GbmHealPix.from_data(upscaled_prob, trigtime=trigtime.fermi,
-                                   quaternion=search.like_frame.quaternion, scpos=search.like_frame.obsgeoloc)
-
-        # apply systematic error
-        systematic = (O3_DGAUSS_Model, result['in_rock'], result['zen'])
-        loc = loc.convolve(*systematic)
-
-        # remove Earth region
-        loc.remove_earth()
-
+        loc = GetGbmLocalization(search, result, trigtime)
         loc.write(args.results_dir, filename=f"Event{i+1}_healpix.fit", overwrite=True)
 
         skyplot = EquatorialPlot()
