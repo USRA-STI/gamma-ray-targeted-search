@@ -415,7 +415,7 @@ def main():
             if region_prob > 50.0:
                 combined = loc.multiply(loc, args.skymap)
                 combined.write(args.results_dir, 
-                               filename="Event{i+1}_healpix_combined.fit", overwrite=True)
+                               filename=f"Event{i+1}_healpix_combined.fit", overwrite=True)
 
                 skyplot = EquatorialPlot()
                 skyplot.add_localization(combined, clevels=[0.9, 0.5], gradient=False)
