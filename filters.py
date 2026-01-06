@@ -137,9 +137,9 @@ def downselect(results, overlap_factor=0.2, threshold=None, combine_spec=True,
                        - max(e1['tstart'], e2['tstart']) + fixedwin
             
             if (combine_spec or (e2['template'] == e1['template'])) and (toverlap > 0):
-                amplitude = e1['snr0'] / np.sqrt(e1['duration'])
+                amplitude = e1['like_snr'] / np.sqrt(e1['duration'])
                 snr_expected = amplitude * toverlap / np.sqrt(e2['duration'])
-                if e2['snr0'] * overlap_factor < snr_expected:
+                if e2['like_snr'] * overlap_factor < snr_expected:
                     keep = False
                     break
         if keep:
