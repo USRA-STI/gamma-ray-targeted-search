@@ -8,7 +8,7 @@ The Gamma-ray Targeted Search (GTS) is a generalized, mission agnostic, version 
 
 To use this code, you will need:
 
-    * python3.9 or higher
+    * python3.11 or higher
     * the dependencies included in `requirements.txt`
 
 You can install the dependencies with pip:
