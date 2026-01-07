@@ -98,7 +98,7 @@ def GetData(trigger_id, settings, data_directory, protocol='HTTPS'):
 
     if len(tte_files) < len(settings['detectors']):
         finder = TriggerFinder(trigger_id, protocol=protocol) if triggered else ContinuousFinder(trigger_id, protocol=protocol)
-        tte_files = finder.get_tte(path, dets=settings['detectors'])
+        tte_files = [finder.get_tte(path, dets=[det]) for det in settings['detectors']]
 
     # get trigtime from first triggered TTE file when using triggered files
     if triggered:
