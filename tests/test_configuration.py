@@ -211,8 +211,8 @@ class TestSearchConfiguration(unittest.TestCase):
 
         self.assertEqual(config["instrument_names"], ["test"])
         self.assertEqual(config["reference_instrument"], "test")
-        self.assertEqual(config["time_range"][0], -30.0)
-        self.assertEqual(config["time_range"][1], +30.0)
+        self.assertEqual(config["search_range"][0], -30.0)
+        self.assertEqual(config["search_range"][1], +30.0)
 
     def test_write(self):
         ref_config = configuration.SearchConfiguration(**self.ref_kwargs)
