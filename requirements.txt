@@ -2,6 +2,7 @@ astropy-healpix>=0.4
 astro-gdt-fermi
 scipy
 matplotlib
+numpy~=2.3.0
 astropy
 notebook
 ipywidgets
