@@ -34,9 +34,15 @@
 #
 import numpy as np
 import healpy as hp
+import astropy.constants
 
 from astropy import units as u
 from astropy.coordinates import SkyCoord, angular_separation
+from scipy.spatial.transform import Rotation
+
+from gdt.core.data_primitives import EventList, Gti
+from gdt.core.tte import PhotonList
+
 
 class SkyGrid():
     """Class to produce an approximate evenly space grid on the sky in
@@ -67,7 +73,7 @@ class SkyGrid():
         return np.rad2deg(self._points)
     
     def _calculate(self, res):
-        """ Method to calculate locations of the response grid on the sky.
+        """Method to calculate locations of the response grid on the sky.
 
         (phi, theta) grid designed to match up with the ones in GBM response 
         tables (in radians) while table values are rounded to the nearest 
@@ -79,7 +85,7 @@ class SkyGrid():
             res (float): Angular separation between grid points
 
         Returns:
-            np.ndarray: Array with azimuth and zenith locations of grid points in radians
+            (np.ndarray): Array with azimuth and zenith locations of grid points in radians
         """
         theta = np.arange(res, 180, res)
         # angular distance around axis in 2*pi radians
@@ -100,12 +106,13 @@ class SkyGrid():
 
         return np.deg2rad(np.array(rows).T)
 
-def getGeoCoordinates(frame, unit='rad'):
-    """ Convert the geocenter coordinates from celestial to spacecraft coordinates
+def get_geo_coordinates(frame, unit='rad', single=False):
+    """Convert the geocenter coordinates from celestial to spacecraft coordinates
 
     Args:
         frame (Frame): frame object with spacecraft position 
         unit (str): unit to return
+        single (bool): return a single value
 
     Returns:
         (float, float, float): tuple with geocenter (az, zen) and Earth's angular radius in the specified unit
@@ -114,10 +121,12 @@ def getGeoCoordinates(frame, unit='rad'):
     geo_azimuth = geo_coord.az
     geo_zenith = 90 * u.deg - geo_coord.el
 
-    return geo_azimuth[0].to_value(unit), geo_zenith[0].to_value(unit), frame.earth_angular_radius.to_value(unit)
+    if single:
+        return geo_azimuth[0].to_value(unit), geo_zenith[0].to_value(unit), frame.earth_angular_radius.to_value(unit)
+    return geo_azimuth.to_value(unit), geo_zenith.to_value(unit), frame.earth_angular_radius.to_value(unit)
 
-def createEarthMask(points, geo_azimuth, geo_zenith, geo_radius):
-    """ Creates a mask with visible locations set to True and non-visible
+def create_earth_mask(points, geo_azimuth, geo_zenith, geo_radius):
+    """Creates a mask with visible locations set to True and non-visible
     locations blocked by the Earth set to False
 
     Args:
@@ -133,9 +142,9 @@ def createEarthMask(points, geo_azimuth, geo_zenith, geo_radius):
     return angular_separation(geo_azimuth, 0.5 * np.pi - geo_zenith,
                               points[0,:], 0.5 * np.pi - points[1,:]) > geo_radius
 
-def grid2healpix(values, coords, spacecraft_frame, nside_out=64,
-                 coord_type='instrument', return_proj_coord=False):
-    """ Convert grid points to healpix pixel values
+def grid_to_healpix(values, coords, spacecraft_frame, nside_out=64,
+                    coord_type='instrument', return_proj_coord=False):
+    """Convert grid points to healpix pixel values
             
     Args:
         values (np.array): Original grid values
@@ -180,3 +189,70 @@ def grid2healpix(values, coords, spacecraft_frame, nside_out=64,
         return proj_values, proj_pix, proj_az, proj_zen, proj_ra, proj_dec
     
     return proj_values, proj_pix
+
+def update_tte_trigtime(tte, t0):
+    """Updates the trigtime for triggered and continuous TTE files.
+    This is needed to ensure all times are relative to the time of
+    interest, t0.
+
+    Args:
+        tte (PhotonList): time tagged event data derived from PhotonList
+        t0 (float): the time of interest for the targeted search
+
+    Returns:
+        (PhotonList)
+    """
+    if tte.trigtime is None:
+        # continuous TTE case, offset by t0
+        offset = t0
+    else:
+        # trigger TTE case, shift data from trigtime to t0
+        offset = t0 - tte.trigtime
+
+    # event times relative to trigtime
+    data = EventList(tte.data.times - offset,
+                     tte.data.channels, tte.data.ebounds)
+
+    # good time interval bounds relative to trigtime
+    gti_start, gti_stop = np.transpose(tte.gti.as_list()) - offset
+    gti = Gti.from_bounds(gti_start, gti_stop)
+
+    return PhotonList.from_data(data, gti=gti, trigger_time=t0,
+                                event_deadtime=tte.event_deadtime,
+                                overflow_deadtime=tte.overflow_deadtime)
+
+def relative_time_offset(frame, coord):
+    """Computes time-of-flight to a SpacecraftFrame from a
+    a reference coordinate (sky location + frame).
+
+    Args:
+        coord (SkyCoord): Sky location from a reference frame
+        frame (SpacecraftFrame): Frame object with the instrument position and orientation
+
+    Returns:
+        (np.ndarray)
+    """
+    # TODO: figure out why this calculation differs a small amount from geocenter angle in GCRS.
+    d_xyz = coord.obsgeoloc.xyz - frame.obsgeoloc.xyz
+    rot = Rotation.from_quat(coord.quaternion)
+
+    d_xyz_prime = rot.inv().apply(d_xyz.T)
+    if d_xyz_prime.ndim == 1:
+        d_xyz_prime = d_xyz_prime.reshape(1, -1)
+
+    # total distance to center of frame
+    D = np.linalg.norm(d_xyz_prime)
+    if D == 0.0:
+        return np.zeros_like(coord.az.radian)
+
+    # angular location for center of frame relative to coord
+    el = np.arcsin(np.clip(d_xyz_prime[:, 2] / D, -1, 1))
+    az = np.arctan2(d_xyz_prime[:, 1], d_xyz_prime[:, 0])
+    mask = (az < 0.0)
+    az[mask] += 2.0 * np.pi
+
+    # angular separation between frame and coord
+    angle = angular_separation(az, el, coord.az.radian, coord.el.radian)
+
+    # light travel time from reference instrument to frame
+    return (D * np.cos(angle) / astropy.constants.c).value

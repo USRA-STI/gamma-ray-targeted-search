@@ -183,14 +183,20 @@ class Likelihood():
             (np.ndarray, np.ndarray, np.ndarray, np.ndarray):
                 flattened counts, background, background uncertainty, excess above background, response
         """
-        f = counts.ravel()[np.newaxis, :]  
-        b = bkgd_counts.ravel()[np.newaxis, :]
-        vb = bkgd_var.reshape(b.shape)
+        f = counts
+        b = bkgd_counts
+        vb = bkgd_var
         # do not allow unphysical negative background estimate
         b = np.maximum(0, b)
         d = f - b  # excess above background counts
         # cast to 2D [spectrum*locations, detectors*channels]
-        r = rsp.reshape((-1, counts.size))
+        r = rsp.reshape((-1, counts.shape[-1]))
+
+        if len(f.shape) > 1:
+            f = np.resize(f, r.shape)
+            b = np.resize(b, r.shape)
+            vb = np.resize(vb, r.shape)
+            d = np.resize(d, r.shape)
         
         return f, b, vb, d, r
 
@@ -354,6 +360,7 @@ class Likelihood():
         self._rsp = rsp
         self._counts = counts
         self._bkgd_counts = bkgd_counts
+        # TODO: remove flatten in favor of working directly with response shape
         f, b, vb, d, r = self._flatten_data(counts, bkgd_counts, bkgd_var, rsp)
         rsq = r**2
     

@@ -123,12 +123,13 @@ def find_greedy_credible_levels(p, area=None):
     cls[i] = cs
     return cls.reshape(p.shape)
 
+
 class LigoHealPix(HealPixLocalization):
     """Class for the LIGO/Virgo HEALPix localization files. Inherits from
     HealPix
     """
     def __init__(self):
-        """ Class constructor """
+        """Class constructor"""
         super().__init__()
         self._uniq = None
         self._dist_mu = None
@@ -203,7 +204,7 @@ class LigoHealPix(HealPixLocalization):
                 
     #mark TODO: What to we want to return?
     def distance(self, clevel):
-        """ Collect distance information over a specific confidence level
+        """Collect distance information over a specific confidence level
 
         Args:
             clevel (float): confidence level between 0 and 1
@@ -222,7 +223,7 @@ class LigoHealPix(HealPixLocalization):
         return (x, np.array(y))
     
     def proj_to_multiorder(self, uniq, input_map, nest=False, density=False):
-        """ Projects an input map onto a set of multiordered pixels
+        """Projects an input map onto a set of multiordered pixels
 
         Args:
             uniq (np.ndarray): array of unique pixel IDs for the output map
@@ -272,7 +273,7 @@ class LigoHealPix(HealPixLocalization):
         return output
 
     def apply_minimum_nside(self, uniq, val, min_nside, density=True):
-        r""" Ensure a multiorder map has nside >= min_side for all pixels
+        """Ensure a multiorder map has nside >= min_side for all pixels
 
         Args:
             uniq (np.ndarray):
@@ -478,7 +479,7 @@ class LigoHealPix(HealPixLocalization):
         return obj
     
     def _data_ext(self):
-        """ Method to get key to the data header
+        """Method to get key to the data header
 
         Returns:
             (str): name of the header with data information
@@ -487,7 +488,7 @@ class LigoHealPix(HealPixLocalization):
 
     def _load_multiorder(self, filename, min_nside=128, flatten=False,
                          columns=['PROBDENSITY', 'DISTMU', 'DISTSIGMA', 'DISTNORM']):
-        """ Method to load a multiorder map columns
+        """Method to load a multiorder map columns
 
         Args:
             filename (str): The filename of the FITS file
@@ -530,7 +531,7 @@ class LigoHealPix(HealPixLocalization):
         return [uniq, area_sr] + col_arr
 
     def _ang_to_pix(self, ra, dec):
-        """ Method to convert RA/Dec to healpixels while accounting for multiorder behavior
+        """Method to convert RA/Dec to healpixels while accounting for multiorder behavior
 
         Args:
             ra (float or np.ndarray): right ascension in degrees
@@ -548,7 +549,7 @@ class LigoHealPix(HealPixLocalization):
         return pix
  
     def _mesh_grid(self, num_phi, num_theta):
-        """ Method to create the mesh grid in phi and theta
+        """Method to create the mesh grid in phi and theta
 
         Args:
             num_phi (int): number of phi points to use
@@ -568,7 +569,7 @@ class LigoHealPix(HealPixLocalization):
 
     @staticmethod
     def _ang_to_index(uniq, theta, phi):
-        """ Convert from theta, phi to index of pixel
+        """Convert from theta, phi to index of pixel
         in the UNIQ pixel array
 
         NOTE: This function is based on LIGO's multiorder guide
@@ -601,7 +602,7 @@ class LigoHealPix(HealPixLocalization):
 
     @staticmethod
     def _vec_to_index(uniq, vectors):
-        """ Convert from vector to pixel index
+        """Convert from vector to pixel index
 
         Args:
             uniq (int, array-like):
@@ -618,7 +619,7 @@ class LigoHealPix(HealPixLocalization):
         return self._ang_to_index(uniq, th, ph)
 
     def _uniq_to_pixel_area(self, uniq, degrees=False):
-        """ Retrieve area of each pixel
+        """Retrieve area of each pixel
  
         Args:
             uniq (int, array-like):
@@ -634,7 +635,7 @@ class LigoHealPix(HealPixLocalization):
         return hp.nside2pixarea(nside, degrees)
 
     def _uniq_to_resol(self, uniq, arcmin=False):
-        """ Retrieve area of each pixel
+        """Retrieve area of each pixel
  
         Args:
             uniq (int, array-like):
@@ -664,6 +665,7 @@ class LigoHealPix(HealPixLocalization):
     def _uniq_to_ang(self, uniq):
         nside, ipix = self._uniq_to_nside_ipix(uniq)
         return hp.pix2ang(nside, ipix, nest=True)
+
 
 class IceCubeHealPix(HealPixLocalization):
     """Class for handling  asymmetric error regions from IceCube"""
@@ -754,7 +756,7 @@ class IceCubeHealPix(HealPixLocalization):
 
     @staticmethod
     def _plane_angle(ra0, dec0, ra1, dec1):
-        r""" Compute angular orientation of a plane passing through
+        """Compute angular orientation of a plane passing through
         (ra0, dec0) and (ra, dec). Provided angle is relative to the
         +z axis after rotating (ra0, dec0) to (0, 0).
 
