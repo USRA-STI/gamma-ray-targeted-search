@@ -303,7 +303,7 @@ def main():
     search.add_calculation([('in_rock', '<i8')], lambda search, result: search.instrument_data['gbm'].response.in_rock)
 
     search.add_calculation([(f'marginal_flux{i}', '<f8') for i in range(3)] +
-                           [(f'marginal_flux_sig{i}', '<f8') for i in range(3)], calculate_marginal_flux, durations=[1.024])
+                           [(f'marginal_flux_sig{i}', '<f8') for i in range(3)], calculate_marginal_flux, durations=[0.064, 1.024, 8.192])
 
 
     search.calculate_likelihood(1.984 - 0.256, 1.984 + 0.256, sky_mask=True)
