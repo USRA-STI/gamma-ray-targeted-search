@@ -44,44 +44,76 @@ https://heasarc.gsfc.nasa.gov/FTP/fermi/data/gbm/ to a local folder
 named `data/GBM` to run it.
 
 ```python
-import gts
+import glob
+import numpy as np
+
+from gdt.core.collection import DataCollection
+from gdt.core.binning.binned import rebin_by_edge_index
+from gdt.core.binning.unbinned import bin_by_time
+from gdt.core.background.fitter import BackgroundFitter
+from gdt.core.background.binned import Polynomial
 from gdt.missions.fermi.time import Time
 from gdt.missions.fermi.gbm.tte import GbmTte
 from gdt.missions.fermi.gbm.poshist import GbmPosHist
-from gdt.missions.fermi.gbm.finders import TriggerFtp, ContinuousFtp
+from gdt.missions.fermi.gbm.detectors import GbmDetectors
+from gdt.missions.fermi.gbm.finders import TriggerFinder
 from gdt.missions.fermi.gbm.tte import GbmTte
 from gdt.missions.fermi.gbm.trigdat import Trigdat
 from gdt.missions.fermi.time import Time
-import glob
+
+from data import FitStatus
+from utils import SkyGrid
+from search import TargetedSearch
+from response import GbmResponse
+from configuration import InstrumentConfiguration, SearchConfiguration
+
+# Setup configuration objects
+nai_configs = {det.name: {'channel_edges': [0, 8, 20, 33, 51, 85, 106, 127, 128], 'search_channels': [1, 2, 3, 4, 5, 6]} for det in GbmDetectors.nai()}
+gbm_config = InstrumentConfiguration('gbm', nai_configs)
+search_config = SearchConfiguration(instruments=[gbm_config])
 
 # Get the tte data
 bn = '160408268'
-ftp = TriggerFtp(bn)
-ftp.get_tte("data/gbm", dets=['n0', 'n1', 'n2', 'n3', 'n4', 'n5', 'n6', 'n7', 'n8', 'n9', 'na', 'nb'])
+finder = TriggerFinder(bn)
+finder.get_tte("data/gbm", dets=gbm_config['detector_names'])
 tte_files = sorted(glob.glob(f'data/gbm/glg_tte_n?_bn{bn}_v??.fit'))
 
 # Get the trigdat file too since it contains spacecraft position history for this burst
-ftp.get_trigdat('data/gbm')
+finder.get_trigdat('data/gbm')
 trigdat_file = glob.glob(f'data/gbm/glg_trigdat_all_bn{bn}_v??.fit')[-1]
 
 # Load the tte data into memory
 tte_data = []
-for tte_file in tte_files:
-    tte = GbmTte.open(tte_file)
+for i, det_config in enumerate(gbm_config['detectors'].values()):
+    tte = GbmTte.open(tte_files[i])
+    tte = tte.rebin_energy(rebin_by_edge_index, np.array(det_config['channel_edges']))
     tte_data.append(tte)
+ttes = DataCollection.from_list(tte_data, names=gbm_config['detector_names'])
 
-# Bin the tte data
-channel_edges = [8, 20, 33, 51, 85, 106, 127]
-pha2_data = gts.preparePha2Data(tte_data, channel_edges)
+trigtime = Time(ttes.get_item('n0').trigtime, format='fermi')
+
+phaiis = DataCollection.from_list(
+     ttes.to_phaii(bin_by_time, search_config['time_resolution'], time_ref=0, time_range=search_config['search_range']),
+     names=gbm_config['detector_names'])
+
+# Fit background
+backfitters = DataCollection.from_list(
+    [BackgroundFitter.from_phaii(phaii, Polynomial, time_ranges=[(-30, 30)]) for phaii in phaiis],
+    names=gbm_config['detector_names'])
+backfitters.fit(order=1)
+
+# placeholder goodness-of-fit to be replaced by chi square test in the future
+goodness_of_fit = DataCollection.from_list(
+        [FitStatus(len(edges) - 1) for det, edges in gbm_config['channel_edges'].items()],
+        names=gbm_config['detector_names'])
 
 # Load the detector responses
-response = gts.loadResponse('templates/GBM/direct/nai.npy', templates=[0, 1, 2], channels=[1, 2, 3, 4, 5, 6])
-
-# Get trigger time and spacecraft frames
 trigdat = Trigdat.open(trigdat_file)
-trigtime = Time(pha2_data[0].trigtime, format='fermi')
-spacecraft_frames = trigdat.poshist
+response = GbmResponse(gbm_config['detector_names'], SkyGrid(5.0),
+                       'templates/GBM', trigdat.poshist, trigtime.fermi, templates=[0, 1, 2])
 
 # Run the search
-search = gts.runSearch(pha2_data, response, spacecraft_frames, trigtime, background_range=[-30, 30])
+search = TargetedSearch(search_config, SkyGrid(search_config['skygrid_resolution']))
+search.add_instrument('gbm', phaiis, backfitters, goodness_of_fit, response)
+results = search.run(search.get_timebins())
 ```
