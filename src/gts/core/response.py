@@ -30,7 +30,7 @@ import numpy as np
 
 from abc import ABC, abstractmethod
 from gdt.missions.fermi.gbm.detectors import GbmDetectors
-from utils import get_geo_coordinates, create_earth_mask
+from .utils import get_geo_coordinates, create_earth_mask
 from astropy.coordinates import angular_separation
 from astropy.time import Time
 

@@ -1,3 +1,4 @@
+#! python
 # Copyright 2017-2022 by Universities Space Research Association (USRA). All rights reserved.
 #
 # Developed by: William Cleveland and Adam Goldstein
@@ -53,17 +54,16 @@ from gdt.missions.fermi.gbm.detectors import GbmDetectors
 from gdt.missions.fermi.gbm.localization import GbmHealPix
 from gdt.missions.fermi.gbm.finders import ContinuousFinder, TriggerFinder
 
-from data import FitStatus
-from utils import SkyGrid, update_tte_trigtime, grid_to_healpix
-from plots import TargetedLightcurves, Waterfall, plot_orbit
-from skymap import O3_DGAUSS_Model, LigoHealPix
-from search import TargetedSearch
-from results import Results, calculate_top_snr, calculate_pe_variables, calculate_marginal_flux, calculate_coinclr
-from filters import remove_pe, remove_dur_spec, downselect
-from response import GbmResponse
-from configuration import InstrumentConfiguration, SearchConfiguration
+from gts.core.data import FitStatus
+from gts.core.utils import SkyGrid, update_tte_trigtime, grid_to_healpix
+from gts.core.plots import TargetedLightcurves, Waterfall, plot_orbit
+from gts.core.skymap import O3_DGAUSS_Model, LigoHealPix
+from gts.core.search import TargetedSearch
+from gts.core.results import Results, calculate_top_snr, calculate_pe_variables, calculate_marginal_flux, calculate_coinclr
+from gts.core.filters import remove_pe, remove_dur_spec, downselect
+from gts.core.response import GbmResponse
+from gts.core.configuration import InstrumentConfiguration, SearchConfiguration
 
-basedir = os.path.dirname(os.path.abspath(__file__))
 
 def GetData(trigger_id, settings, data_directory, protocol='HTTPS'):
     """ Method for downloading data needed by the targeted search
@@ -168,6 +168,7 @@ def main():
 
     parser = argparse.ArgumentParser("gbm_targeted_search.py", "Script for performing the GBM targeted search")
     parser.add_argument('-t', '--time', default=None, help="Time for continuous data search.")
+    parser.add_argument('-d', '--dir', type=str, default=".", help="Base directory with templates folder.")
     parser.add_argument('-b', '--burst-number', default=None, help="GBM burst number for on-board trigger search.")
     parser.add_argument('-f', '--format', type=str, default=None, choices=[None, 'gps', 'fermi', 'datetime'], help="Format of --trigger option.")
     parser.add_argument('-w', '--search-window-width', default=60, type=float, help="Search window around trigger time in seconds. The search will run from -width/2 until +width/2.")
@@ -264,7 +265,7 @@ def main():
     # retrieve response for hard, normal, soft GRB spectral templates
     skygrid = SkyGrid(search_config['skygrid_resolution'])
     response = GbmResponse(gbm_config['detector_names'], skygrid,
-                           os.path.join(basedir, 'templates/GBM'),
+                           os.path.join(args.dir, 'templates/GBM'),
                            spacecraft_frames, trigtime.fermi, templates=[0, 1, 2])
 
     print("  Binning TTE")

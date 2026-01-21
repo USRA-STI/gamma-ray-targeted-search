@@ -26,7 +26,7 @@
 #
 import numpy as np
 
-from utils import relative_time_offset
+from .utils import relative_time_offset
 from astropy.coordinates import SkyCoord, angular_separation
 
 

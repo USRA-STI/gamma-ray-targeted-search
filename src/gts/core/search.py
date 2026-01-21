@@ -31,9 +31,9 @@ from rich.progress import track
 from astropy.coordinates import angular_separation
 from gdt.core.data_primitives import TimeEnergyBins
 
-from likelihood import Likelihood
-from data import InstrumentData
-from results import Results
+from .likelihood import Likelihood
+from .data import InstrumentData
+from .results import Results
 
 
 class TargetedSearch():

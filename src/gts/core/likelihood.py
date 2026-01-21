@@ -39,11 +39,13 @@
 # License.
 #
 import numpy as np
-from scipy.special import erf
 import matplotlib.pyplot as plt
+
+from scipy.special import erf
 from mpl_toolkits.mplot3d import Axes3D
 
-import utils
+from .utils import SkyGrid
+
 
 class Likelihood():
     """The log-likelihood ratio calculation (Blackburn+ 2015)
@@ -403,7 +405,7 @@ class Likelihood():
     def plotLlr(self):
         """ Method to plot the log likelihood ratio """
         # Get the sky grid
-        skyGrid = utils.SkyGrid(5)
+        skyGrid = SkyGrid(5)
 
         theta_grid = skyGrid.radians[1] # 0 to pi
         phi_grid = skyGrid.radians[0] # 0 to 2pi)
@@ -433,7 +435,7 @@ class Likelihood():
         """ Method to plot the fitted photon flux """
 
         # Get the sky grid
-        skyGrid = utils.SkyGrid(5)
+        skyGrid = SkyGrid(5)
 
         theta_grid = skyGrid.radians[1] # 0 to pi
         phi_grid = skyGrid.radians[0] # 0 to 2pi)
@@ -465,7 +467,7 @@ class Likelihood():
             (float, float): best-fit location as azimuth and zenith in the spacecraft frame
         """
         # Generate the sky grid
-        skyGrid = utils.SkyGrid(self._skyres)
+        skyGrid = SkyGrid(self._skyres)
 
         # get the location, sun-, geo-angle of the max likelihood
         max_az, max_zen = skyGrid.degrees[:,self.max_location]

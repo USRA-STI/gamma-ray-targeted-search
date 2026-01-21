@@ -41,7 +41,7 @@ from scipy.integrate import trapezoid
 from scipy.optimize import fmin
 from astropy.coordinates import SkyCoord
 
-from priors import sky_prior, log_prior
+from .priors import sky_prior, log_prior
 
 def calculate_top_snr(search, result, instrument, channels, n=1):
     """Calculate top `n` signal-to-noise ratios (SNR) for each result.
