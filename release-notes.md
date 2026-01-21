@@ -7,6 +7,8 @@ This release included the following updates:
 
 ## Version 1.1.0 (Released Jan 7, 2026)
 
+This release included the following updates:
+
 - Restructured codebase to use modular classes
 - Implemented unbinned NaivePoisson background fit
 - Added support for multimission searches
@@ -16,5 +18,7 @@ This release included the following updates:
 - Updated dependencies
 
 ## Version 1.0.0 (Released Aug 15, 2024)
+
+This release included the following updates:
 
 - Initial release
