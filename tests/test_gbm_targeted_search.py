@@ -1,14 +1,15 @@
  
 import os
 import sys
-test_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.join(test_dir , '..')) # to be removed when gts will be installed as a module
 import shutil
 import tempfile
 import urllib.request
 import gbm_targeted_search
 
 from unittest import  mock, TestCase
+
+test_dir = os.path.dirname(os.path.abspath(__file__))
+
 
 class gbmTargetedSearchTest(TestCase):
 

@@ -26,17 +26,17 @@
 #
 import os
 import sys
-test_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.join(test_dir , '..')) # to be removed when gts will be installed as a module
 import copy
-import utils
 import unittest
 import numpy as np
 
+from gts.core import utils
 from gdt.core.coords.spacecraft import SpacecraftFrame
 from gdt.core.coords.quaternion import Quaternion
 from astropy.coordinates import SkyCoord, CartesianRepresentation
 from astropy.constants import c
+
+test_dir = os.path.dirname(os.path.abspath(__file__))
 
 
 class TestSkyGrid(unittest.TestCase):
