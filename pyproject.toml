@@ -41,13 +41,16 @@ docs = ["Sphinx==5.0.2", "astropy-sphinx-theme", "nbsphinx", "sphinx-automodapi"
 
 [tool.setuptools]
 include-package-data = true
-script-files = ["scripts/gbm_targeted_search.py"]
+script-files = ["scripts/gbm_targeted_search.py", "scripts/gts-download-responses"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"gts.data" = ['*.urls']
+
 [tool.setuptools.dynamic]
-version = { attr = "gts.__version__" }
+version = { attr = "gts.core.__version__" }
 
 [project.urls]
 Documentation = 'https://astro-gdt.readthedocs.io/en/latest/'
