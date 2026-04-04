@@ -41,7 +41,7 @@ docs = ["Sphinx==5.0.2", "astropy-sphinx-theme", "nbsphinx", "sphinx-automodapi"
 
 [tool.setuptools]
 include-package-data = true
-script-files = ["scripts/gbm_targeted_search.py", "scripts/gts-download-templates"]
+script-files = ["scripts/gts-gbm", "scripts/gts-download-templates"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
