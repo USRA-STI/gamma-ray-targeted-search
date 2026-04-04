@@ -54,7 +54,7 @@ from gdt.missions.fermi.gbm.detectors import GbmDetectors
 from gdt.missions.fermi.gbm.localization import GbmHealPix
 from gdt.missions.fermi.gbm.finders import ContinuousFinder, TriggerFinder
 
-from gts.core import templates_path
+from gts.core import templates_path, data_path
 from gts.core.data import FitStatus
 from gts.core.utils import SkyGrid, update_tte_trigtime, grid_to_healpix
 from gts.core.plots import TargetedLightcurves, Waterfall, plot_orbit
@@ -143,7 +143,7 @@ def main():
          'bkgd_range': args.background_range, 'bkgd_window': args.background_window,
          'data_range': np.array([-0.5, 0.5]) * (args.search_window_width + args.max_dur)})
 
-    trigtime, tte_files, poshist_file = GetData(trigger, gbm_config, "data/gbm", args.protocol)
+    trigtime, tte_files, poshist_file = GetData(trigger, gbm_config, data_path.joinpath("fermi-gbm"), args.protocol)
 
     print("Preparing data...")
 
