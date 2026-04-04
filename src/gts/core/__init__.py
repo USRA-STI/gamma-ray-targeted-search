@@ -24,4 +24,30 @@
 # implied. See the License for the specific language governing permissions and limitations under the
 # License.
 #
+import os
+
+from pathlib import Path
+from importlib.resources import files
+
 __version__ = "2.0.1"
+
+_gts_data = files('gts.data')
+
+suite_path = Path(__file__).parent.parent
+
+if 'GTS_BASE' in os.environ:
+    base_path = Path(os.environ['GTS_BASE'])
+else:
+    base_path = Path.home().joinpath('.gammaray_targeted_search', __version__)
+
+cache_path = base_path.joinpath('cache')
+
+if 'GTS_DATA' in os.environ:
+    data_path = Path(os.environ['GTS_DATA'])
+else:
+    data_path = base_path.joinpath('data')
+
+if 'GTS_TEMPLATES' in os.environ:
+    templates_path = Path(os.environ['GTS_TEMPLATES'])
+else:
+    templates_path = base_path.joinpath('templates')
