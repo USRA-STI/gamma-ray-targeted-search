@@ -54,6 +54,7 @@ from gdt.missions.fermi.gbm.detectors import GbmDetectors
 from gdt.missions.fermi.gbm.localization import GbmHealPix
 from gdt.missions.fermi.gbm.finders import ContinuousFinder, TriggerFinder
 
+from gts.core import templates_path
 from gts.core.data import FitStatus
 from gts.core.utils import SkyGrid, update_tte_trigtime, grid_to_healpix
 from gts.core.plots import TargetedLightcurves, Waterfall, plot_orbit
@@ -168,7 +169,7 @@ def main():
     # retrieve response for hard, normal, soft GRB spectral templates
     skygrid = SkyGrid(search_config['skygrid_resolution'])
     response = GbmResponse(gbm_config['detector_names'], skygrid,
-                           os.path.join(args.dir, 'templates/GBM'),
+                           templates_path.joinpath('fermi-gbm/templates/GBM'), # TO DO: update GBM templates to remove GBM folder
                            spacecraft_frames, trigtime.fermi, templates=[0, 1, 2])
 
     print("  Binning TTE")
