@@ -242,7 +242,8 @@ class TargetedSearch():
         """
         # prepare results arrays
         results = Results(len(timebins), time_ref=time_ref)
-        [calc['results'].resize(len(timebins)) for calc in self._calculations]
+        for calc in self._calculations:
+            calc['results'] = np.resize(calc['results'], len(timebins))
 
         task = None if progress is None else progress.add_task(description, total=len(timebins))
 
