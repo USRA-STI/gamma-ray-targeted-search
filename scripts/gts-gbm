@@ -44,7 +44,7 @@ from gdt.core.collection import DataCollection
 from gdt.core.binning.binned import rebin_by_edge_index
 from gdt.core.binning.unbinned import bin_by_time
 from gdt.core.background.fitter import BackgroundFitter
-from gdt.core.background.binned import Polynomial
+from gdt.core.background.binned import Polynomial, RoboLowess
 from gdt.core.background.unbinned import NaivePoisson
 from gdt.missions.fermi.time import Time
 from gdt.missions.fermi.gbm.saa import GbmSaa
@@ -83,9 +83,10 @@ def main():
     parser.add_argument('-s', '--skymap', default=None, type=str, help="Optional skymap file.")
     parser.add_argument('-o', '--results-dir', default='.', type=str, help="Directory for results output.")
     parser.add_argument('-p', '--protocol', default='HTTPS', type=str, choices=protocols, help="Download Protocol.")
+    parser.add_argument('-r', '--background-range', default=[-500, 500], nargs="+", type=float, help="Background fit range(s).")
     parser.add_argument('-x', '--background-window', default=125.0, type=float, help="NaivePossion background window.")
     parser.add_argument('-y', '--background-poly', default=None, type=int, help="Polynomial background order.")
-    parser.add_argument('-z', '--background-range', default=[-500, 500], nargs="+", type=float, help="Background fit range(s).")
+    parser.add_argument('-z', '--background-robo', action='store_true', help="RoboLowess background.")
     parser.add_argument('--flatten', action='store_true', help="Flatten multiorder skymaps.")
     
     print("\n"  + " ".join(sys.argv) +  "\n")
@@ -179,16 +180,21 @@ def main():
 
     print("  Fitting background")
     backfitters = None
-    if args.background_poly is None: # unbinned sliding window background (average rate over bkgd_window period)
-        backfitters = DataCollection.from_list(
-            [BackgroundFitter.from_tte(tte.slice_time(search_config['bkgd_range']), NaivePoisson) for tte in ttes],
-            names=gbm_config['detector_names'])
-        backfitters.fit(window_width=search_config['bkgd_window'], fast=True)
-    else: # polynomial background
+    if args.background_poly is not None: # polynomial background
         backfitters = DataCollection.from_list(
             [BackgroundFitter.from_phaii(phaii, Polynomial, time_ranges=search_config['bkgd_range']) for phaii in phaiis],
             names=gbm_config['detector_names'])
         backfitters.fit(order=args.background_poly)
+    elif args.background_robo: # robolowess background
+        backfitters = DataCollection.from_list(
+            [BackgroundFitter.from_phaii(phaii, RoboLowess, time_ranges=[search_config['bkgd_range']]) for phaii in phaiis],
+            names=gbm_config['detector_names'])
+        backfitters.fit()
+    else: # unbinned sliding window background (average rate over bkgd_window period)
+        backfitters = DataCollection.from_list(
+            [BackgroundFitter.from_tte(tte.slice_time(search_config['bkgd_range']), NaivePoisson) for tte in ttes],
+            names=gbm_config['detector_names'])
+        backfitters.fit(window_width=search_config['bkgd_window'], fast=True)
     
     goodness_of_fit = DataCollection.from_list(
         [FitStatus(len(edges) - 1) for det, edges in gbm_config['channel_edges'].items()],
