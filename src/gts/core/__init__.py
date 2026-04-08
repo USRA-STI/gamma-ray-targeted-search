@@ -47,7 +47,11 @@ if 'GTS_DATA' in os.environ:
 else:
     data_path = base_path.joinpath('data')
 
+data_path.mkdir(parents=True, exist_ok=True)
+
 if 'GTS_TEMPLATES' in os.environ:
     templates_path = Path(os.environ['GTS_TEMPLATES'])
 else:
     templates_path = base_path.joinpath('templates')
+
+templates_path.mkdir(parents=True, exist_ok=True)
