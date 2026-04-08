@@ -98,7 +98,7 @@ def download_mission(mission: str):
         for f in files:
             if ".tar" in f.suffixes:
                 tar = tarfile.open(f)
-                tar.extractall(dest_dir)
+                tar.extractall(dest_dir, filter='data')
 
 def clean_mission(mission: str):
     urls = get_mission_urls(mission)
