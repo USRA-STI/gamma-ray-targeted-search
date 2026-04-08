@@ -189,7 +189,7 @@ def main():
         backfitters = DataCollection.from_list(
             [BackgroundFitter.from_phaii(phaii, RoboLowess, time_ranges=[search_config['bkgd_range']]) for phaii in phaiis],
             names=gbm_config['detector_names'])
-        backfitters.fit()
+        backfitters.fit(temporal_resolution=search_config['time_resolution'])
     else: # unbinned sliding window background (average rate over bkgd_window period)
         backfitters = DataCollection.from_list(
             [BackgroundFitter.from_tte(tte.slice_time(search_config['bkgd_range']), NaivePoisson) for tte in ttes],
