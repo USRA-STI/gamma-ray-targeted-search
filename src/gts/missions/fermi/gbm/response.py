@@ -27,6 +27,7 @@
 import os
 import numpy as np
 
+from pathlib import Path
 from astropy.time import Time
 from astropy.coordinates import angular_separation
 from gdt.missions.fermi.gbm.detectors import GbmDetectors
@@ -85,6 +86,14 @@ class GbmResponse(BaseResponse):
             delta (float): Angular displacement for rebuilding atmospheric scattering response
             templates (list): list of template IDs to use
         """
+        if not Path(templates_directory).exists():
+            print(f"\nGBM response path {templates_directory} does not exist.\n")
+            user_input = input("Would you like to download them now? [Y/N] ")
+            if user_input == "Y":
+                os.system("gts-templates download fermi-gbm")
+            else:
+                raise ValueError("Cannot proceed without response templates. Exiting...")
+
         super().__init__(detectors, skygrid)
         self.t0 = t0
         self.delta = delta
