@@ -85,6 +85,7 @@ def main():
     parser.add_argument('-s', '--skymap', default=None, type=str, help="Optional skymap file.")
     parser.add_argument('-o', '--results-dir', default='.', type=str, help="Directory for results output.")
     parser.add_argument('-p', '--protocol', default='HTTPS', type=str, choices=protocols, help="Download Protocol.")
+    parser.add_argument('-R', '--data-range', default=[-500, 500], nargs=2, type=float, help="Data range.")
     parser.add_argument('-r', '--background-range', default=[-500, 500], nargs="+", type=float, help="Background fit range(s).")
     parser.add_argument('-x', '--background-window', default=125.0, type=float, help="NaivePossion background window.")
     parser.add_argument('-y', '--background-poly', default=None, type=int, help="Polynomial background order.")
@@ -134,14 +135,26 @@ def main():
     bgo_configs = {det.name: {'channel_edges': [0, 8, 21, 40, 65, 90, 112, 124, 128], 'search_channels': [0, 1, 2, 3, 4, 5, 6, 7]} for det in GbmDetectors.bgo()}
     gbm_config = InstrumentConfiguration('gbm', nai_configs | bgo_configs)
 
+    data_range = [
+            min(args.background_range + args.data_range),
+            max(args.background_range + args.data_range)]
+
     search_config = SearchConfiguration(instruments=[gbm_config])
     search_config.settings.update({
-         'win_width': args.search_window_width,
-         'min_loglr': 5,
-         'min_dur': args.min_dur, 'max_dur': args.max_dur,
-         'min_step': args.min_step,'num_steps': args.num_steps,
-         'bkgd_range': args.background_range, 'bkgd_window': args.background_window,
-         'data_range': np.array([-0.5, 0.5]) * (args.search_window_width + args.max_dur)})
+        'win_width': args.search_window_width,
+        'min_loglr': 5,
+        'min_dur': args.min_dur, 'max_dur': args.max_dur,
+        'min_step': args.min_step,'num_steps': args.num_steps,
+        'bkgd_range': args.background_range, 'bkgd_window': args.background_window,
+        'data_range': data_range})
+    search_config.settings["upper_limits"] = {
+        'timescales': [0.128, 1.024, 8.192],
+        'templates': ["soft", "norm", "hard"],
+        'sigma': 3.0,
+        'energy_range': [10.0, 1000.0],
+        'create_maps': False,
+        'nside': 16
+    }
 
     trigtime, tte_files, poshist_file = GetData(trigger, gbm_config, data_path.joinpath("fermi-gbm"), args.protocol)
 
