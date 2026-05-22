@@ -32,6 +32,7 @@ from astropy.time import Time
 from astropy.coordinates import angular_separation
 from gdt.missions.fermi.gbm.detectors import GbmDetectors
 
+from .spectra import hard, norm, soft, blackbody
 from ....core.response import BaseResponse
 from ....core.utils import get_geo_coordinates, create_earth_mask
 
@@ -74,7 +75,7 @@ class GbmResponse(BaseResponse):
     det_index = {'n0': 0, 'n1': 1, 'n2': 2, 'n3':3, 'n4': 4, 'n5': 5, 'n6': 6, 'n7': 7, 'n8': 8, 'n9': 9, 'na': 10, 'nb': 11, 'b0': 0, 'b1': 1}
 
     def __init__(self, detectors, skygrid, templates_directory, spacecraft_frames, 
-                 t0, delta: float = np.radians(0.1), templates: list = None):
+                 t0, delta: float = np.radians(0.1), templates: dict = None, selected_templates: list = None):
         """Class constructor
 
         Args:
@@ -84,7 +85,8 @@ class GbmResponse(BaseResponse):
             spacecraft_frames (SpacecraftFrame): Spacecraft position history object
             t0 (float): Reference time of the search
             delta (float): Angular displacement for rebuilding atmospheric scattering response
-            templates (list): list of template IDs to use
+            templates (dict): Dict of template names and functional forms
+            selected_templates (list[str]): List of desired template names
         """
         if not Path(templates_directory).exists():
             print(f"\nGBM response path {templates_directory} does not exist.\n")
@@ -94,12 +96,15 @@ class GbmResponse(BaseResponse):
             else:
                 raise ValueError("Cannot proceed without response templates. Exiting...")
 
-        super().__init__(detectors, skygrid)
+        # default spectral templates
+        if templates is None:
+            templates = {"hard": hard, "norm": norm, "soft": soft, "blackbody": blackbody}
+
+        super().__init__(detectors, skygrid, templates, selected_templates)
         self.t0 = t0
         self.delta = delta
         self.templates_directory = templates_directory
         self.available_azimuths = self.get_available_azimuths('n0')
-        self.templates = templates
         self.spacecraft_frames = spacecraft_frames
 
         self.direct = {}
@@ -195,8 +200,8 @@ class GbmResponse(BaseResponse):
 
         response = np.concatenate(responses, axis=2)
 
-        if self.templates:
-            response = response[self.templates, :, :]
+        if self.templates_idx:
+            response = response[self.templates_idx, :, :]
 
         self.response_matrix = response
         self.in_rock = int(isinstance(atmo, np.ndarray))

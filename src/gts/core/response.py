@@ -33,14 +33,21 @@ class BaseResponse(ABC):
     Attributes:
         detectors (list[str]): List of detector names
         skygrid (Skygrid): Instance of Skygrid class with expected sky positions and other relevant structures
+        templates (dict): Dict of template names and functional forms
+        selected_templates (list): List of desired template names
 
     Public Methods:
         load_response: Abstract method to compute the response matrix for period of time
         sky_mask: Return sky mask with True for visible skygrid locations, False otherwise
     """
-    def __init__(self, detectors, skygrid):
+    def __init__(self, detectors, skygrid, templates, selected_templates: list = None):
         self.detectors = detectors
         self.skygrid = skygrid
+        self.templates = templates
+        self.templates_idx = None
+        if selected_templates is not None:
+            keys = list(self.templates.keys())
+            self.templates_idx = [keys.index(name) for name in selected_templates]
 
     @abstractmethod
     def load_response(self, tstart, tstop, **kwargs):
@@ -48,3 +55,15 @@ class BaseResponse(ABC):
 
     def sky_mask(self):
         return None
+
+    def selected_templates(self):
+        """list[str]: List of selected templates"""
+        keys = list(self.templates.keys())
+
+        if self.template_idx is None:
+            return keys
+
+        return [keys[i] for i in self.templates_idx]
+
+    def get_template(self, name):
+        return self.templates[name]

@@ -182,7 +182,7 @@ def main():
     skygrid = SkyGrid(search_config['skygrid_resolution'])
     response = GbmResponse(gbm_config['detector_names'], skygrid,
                            templates_path.joinpath('fermi-gbm/templates/GBM'), # TO DO: update GBM templates to remove GBM folder
-                           spacecraft_frames, trigtime.fermi, templates=search_config['templates'])
+                           spacecraft_frames, trigtime.fermi, selected_templates=search_config['templates'])
 
     print("  Binning TTE")
     phaiis = DataCollection.from_list(
@@ -233,7 +233,6 @@ def main():
     timebins = search.get_timebins()
     response.preprocess(timebins)
 
-    """
     with Progress(*progress_args) as progress:
         results = search.run(timebins, progress=progress, description="  Searching")
 
@@ -251,7 +250,6 @@ def main():
          frames.geocenter.separation(coordinate_max, origin_mismatch='ignore').radian]
     )
     results.append_fields('in_gti', np.ones(results.size, dtype=int))
-    """
     results = Results.open("full_results.npz")
 
     # filter results to produce up to 3 top candidates
@@ -290,10 +288,8 @@ def main():
         print(
             "%13.3f %7.3f %3d %4d %4d  %5.1f %5.1f %5.1f %5.1f %1d %5.2f %5.1f %5.1f %5.1f %5.1f %5.1f %5.1f %5.1f %8.2f %8.2f %5.1f %5.1f %5.1f" % tuple(values))
 
-    if "upper_limits" in search_config.settings:
-        print("hello")
+    #if "upper_limits" in search_config.settings: # TODO: add upper limit print statement
 
-    exit(0)
     print("\nCreating the following plots:")
 
     print("\nOrbital plot...")
