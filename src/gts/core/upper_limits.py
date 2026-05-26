@@ -54,21 +54,24 @@ def amplitude_solver(amp, pflux, function, params, energies):
     Returns:
         (float): difference between desired photon flux and photon flux computed with test amplitude
     """
-    params['amp'] = 10.0**amp[0]
-    photon_model = function(params, energies)
+    params[0] = 10.0**amp[0]
+    photon_model = function.eval(params, energies)
     test_pflux = trapezoid(photon_model, energies)
 
     return np.abs(test_pflux - pflux)        
 
 
-def photon_to_energy_flux(pflux, func, params, energy_range=(10.0, 1000.)):
-    """Calculate the energy flux from a photon flux over 50-300 keV.
+def photon_to_energy_flux(pflux, func, params, erange_in=(50.0, 300.0), erange_out=(10.0, 1000.)):
+    """Calculate the energy flux from a photon flux.
 
     Args:
-        pflux (np.array): Photon flux measured over 50-300 keV
+        pflux (np.array): Photon flux measured over `erange_in`
         func (gdt.core.spectra.functions.Function): Functional form of the spectral shape
         params (list): List of parameter values
-        energy_range (tuple(2), optional):
+        erange_in (tuple(2), optional):
+            The energy range of the input photon flux, in keV.
+            Default is (50.0, 300.0).
+        erange_out (tuple(2), optional):
             The energy range over which to calculate the energy flux, in keV.
             Default is (10.0, 1000.0).
             
@@ -76,9 +79,8 @@ def photon_to_energy_flux(pflux, func, params, energy_range=(10.0, 1000.)):
         (np.array): The energy flux
     """
     # templates are normalized and photon flux calculated over 50-300 keV
-    input_energies = np.logspace(np.log10(50.0), np.log10(300.0), 1000)
-    output_energies = np.logspace(np.log10(energy_range[0]), 
-                                  np.log10(energy_range[1]), 1000)
+    input_energies = np.logspace(*np.log10(erange_in), 1000)
+    output_energies = np.logspace(*np.log10(erange_out), 1000)
        
     # need to solve for the photon model amplitude given the model and pflux
     eflux = np.zeros_like(pflux)
@@ -87,16 +89,16 @@ def photon_to_energy_flux(pflux, func, params, energy_range=(10.0, 1000.)):
             continue
         the_args = (pflux[i], func, params, input_energies)
         log_amp = fmin(amplitude_solver, [np.log10(0.01)], the_args, disp=False)
-        params['amp'] = 10.0**log_amp[0]
+        params[0] = 10.0**log_amp[0]
 
         # now calculate energy flux over the desired energy range
-        eflux[i] = trapezoid(output_energies*func(params, output_energies),
+        eflux[i] = trapezoid(output_energies*func.eval(params, output_energies),
                              output_energies)*1.6e-9
         
     return eflux
 
 
-def upper_limit_table(results, columns, templates=['soft', 'norm', 'hard'],  timescales=[0.128, 1.024, 8.192], sigma=3.0, energy_range=(10.0, 1000.0)):
+def upper_limit_table(values, timescales=[0.128, 1.024, 8.192], sigma=3.0, erange_in=(50.0, 300.0), erange_out=(10.0, 1000.0)):
     """Produce an upper limit report for given timescales and templates
 
     Args:
@@ -110,49 +112,32 @@ def upper_limit_table(results, columns, templates=['soft', 'norm', 'hard'],  tim
     Returns:
         (str): The report
     """
-    """
-    checks to run
-        if template not in self.templates:
-            raise ValueError('{} is not a valid template'.format(template))
-        if timescale not in self.timescales:
-            raise ValueError('{} is not a valid timescale'.format(timescale))
-        if sigma <= 0.0:
-            raise ValueError('sigma must be positive')
+    if sigma <= 0.0:
+        raise ValueError('sigma must be positive')
 
-        # masks for duration and spectrum, get the template function definition
-        dur_mask = (self._durations == timescale)
-        spec_mask = (self._templates == template)
- 
-        # mask the data for the selected timescale and spectrum
-        times = self._times[dur_mask]
-        pflux_ul = self._pflux + sigma*self._pflux_std
-        pflux_ul = pflux_ul[dur_mask,:]
-        pflux_ul = pflux_ul[:,spec_mask]
-    """
-    nspectra = len(templates)
+    nspectra = len(values)
     ndurs = len(timescales)
     table = np.zeros((nspectra, ndurs))
     for i in range(nspectra):
+        name, func, dur, flux, err = values[i]
         for j in range(ndurs):
             try:
+                if timescales[j] not in dur:
+                    raise ValueError('{} is not a valid timescale'.format(timescales[j]))
+
                 # masks for duration and spectrum, get the template function definition
-                dur_mask = (self._durations == timescale)
-                spec_mask = (self._templates == template)
+                dur_mask = (dur == timescales[j])
  
                 # mask the data for the selected timescale and spectrum
-                times = self._times[dur_mask]
-                pflux_ul = self._pflux + sigma*self._pflux_std
-                pflux_ul = pflux_ul[dur_mask,:]
-                pflux_ul = pflux_ul[:,spec_mask]
-
-                eflux_ul = photon_to_energy_flux(pflux_ul, func, params, energy_range)
+                pflux_ul = (flux + sigma * err)[dur_mask]
+                eflux_ul = photon_to_energy_flux(pflux_ul, func, func.default_values, erange_in, erange_out)
                 table[i,j] = np.max(eflux_ul)
             except ValueError as err: print(err)
 
     title = '\n{:2.1f} sigma Energy Flux Upper Limits '.format(sigma)
-    title+= ' ({0:2.0f}-{1:2.0f} keV):\n'.format(*erange)
+    title+= ' ({0:2.0f}-{1:2.0f} keV):\n'.format(*erange_out)
     hdr = 'Timescale  '
-    hdr += ''.join(['{:<9}'.format(x) for x in templates])
+    hdr += ''.join(['{:<9}'.format(v[0]) for v in values])
     div = '-'*len(hdr)
     lines = [title, hdr, div]
     for i in range(ndurs):

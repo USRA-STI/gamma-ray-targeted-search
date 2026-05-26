@@ -62,6 +62,7 @@ from gts.core.skymap import O3_DGAUSS_Model, LigoHealPix
 from gts.core.search import TargetedSearch
 from gts.core.results import Results, calculate_top_snr, calculate_pe_variables, calculate_marginal_flux, calculate_coinclr
 from gts.core.filters import remove_pe, remove_dur_spec, downselect
+from gts.core.upper_limits import upper_limit_table
 from gts.core.configuration import InstrumentConfiguration, SearchConfiguration
 from gts.missions.fermi.gbm.utils import GetData, GetGbmLocalization 
 from gts.missions.fermi.gbm.response import GbmResponse
@@ -157,6 +158,7 @@ def main():
         'create_maps': False,
         'nside': 16
     }
+    ul_config = search_config.settings.get("upper_limits", None)
 
     trigtime, tte_files, poshist_file = GetData(trigger, gbm_config, data_path.joinpath("fermi-gbm"), args.protocol)
 
@@ -178,11 +180,14 @@ def main():
     spacecraft_frames = poshist.get_spacecraft_frame()
 
     print("  Opening response")
-    # retrieve response for hard, normal, soft GRB spectral templates
+    # retrieve responses
     skygrid = SkyGrid(search_config['skygrid_resolution'])
     response = GbmResponse(gbm_config['detector_names'], skygrid,
                            templates_path.joinpath('fermi-gbm/templates/GBM'), # TO DO: update GBM templates to remove GBM folder
-                           spacecraft_frames, trigtime.fermi, selected_templates=search_config['templates'])
+                           spacecraft_frames, trigtime.fermi)
+
+    # select spectral templates
+    response.select_template_names(search_config['templates'])
 
     print("  Binning TTE")
     phaiis = DataCollection.from_list(
@@ -224,17 +229,18 @@ def main():
 
     search.add_calculation([('in_rock', '<i8')], lambda search, result: search.instrument_data['gbm'].response.in_rock)
 
-    if 'upper_limits' in search_config.settings:
-        templates = search_config['templates']
-        ul_durations = search_config['upper_limits']['durations']
+    if ul_config is not None:
+        # compute marginal flux over all response templates for upper limit reporting
+        templates = list(response.get_templates().keys())
         search.add_calculation([(f'marginal_flux_{t}', '<f8') for t in templates] +
-                               [(f'marginal_flux_sig_{t}', '<f8') for t in templates], calculate_marginal_flux, durations=ul_durations)
+                               [(f'marginal_flux_sig_{t}', '<f8') for t in templates], calculate_marginal_flux, durations=ul_config['durations'])
 
     timebins = search.get_timebins()
     response.preprocess(timebins)
 
     with Progress(*progress_args) as progress:
         results = search.run(timebins, progress=progress, description="  Searching")
+    results.template_names = list(response.get_templates().keys())
 
     # append common coordinate transformations
     frames = search.instrument_data['gbm'].response._preprocessed['frames']
@@ -250,7 +256,6 @@ def main():
          frames.geocenter.separation(coordinate_max, origin_mismatch='ignore').radian]
     )
     results.append_fields('in_gti', np.ones(results.size, dtype=int))
-    results = Results.open("full_results.npz")
 
     # filter results to produce up to 3 top candidates
     filtered_results = results.filter(remove_pe)
@@ -288,7 +293,12 @@ def main():
         print(
             "%13.3f %7.3f %3d %4d %4d  %5.1f %5.1f %5.1f %5.1f %1d %5.2f %5.1f %5.1f %5.1f %5.1f %5.1f %5.1f %5.1f %8.2f %8.2f %5.1f %5.1f %5.1f" % tuple(values))
 
-    #if "upper_limits" in search_config.settings: # TODO: add upper limit print statement
+    # print upper limit table when requested
+    if ul_config is not None:
+        values = [[t, response.get_template_function(t), results['duration'], results[f'marginal_flux_{t}'], results[f'marginal_flux_sig_{t}']]
+                  for t in ul_config['templates']]
+        table = upper_limit_table(values, timescales=ul_config['durations'], sigma=ul_config['sigma'], erange_out=ul_config['energy_range'])
+        print(table)
 
     print("\nCreating the following plots:")
 

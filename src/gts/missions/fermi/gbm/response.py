@@ -75,7 +75,7 @@ class GbmResponse(BaseResponse):
     det_index = {'n0': 0, 'n1': 1, 'n2': 2, 'n3':3, 'n4': 4, 'n5': 5, 'n6': 6, 'n7': 7, 'n8': 8, 'n9': 9, 'na': 10, 'nb': 11, 'b0': 0, 'b1': 1}
 
     def __init__(self, detectors, skygrid, templates_directory, spacecraft_frames, 
-                 t0, delta: float = np.radians(0.1), templates: dict = None, selected_templates: list = None):
+                 t0, delta: float = np.radians(0.1), templates: dict = None):
         """Class constructor
 
         Args:
@@ -86,7 +86,6 @@ class GbmResponse(BaseResponse):
             t0 (float): Reference time of the search
             delta (float): Angular displacement for rebuilding atmospheric scattering response
             templates (dict): Dict of template names and functional forms
-            selected_templates (list[str]): List of desired template names
         """
         if not Path(templates_directory).exists():
             print(f"\nGBM response path {templates_directory} does not exist.\n")
@@ -100,7 +99,7 @@ class GbmResponse(BaseResponse):
         if templates is None:
             templates = {"hard": hard, "norm": norm, "soft": soft, "blackbody": blackbody}
 
-        super().__init__(detectors, skygrid, templates, selected_templates)
+        super().__init__(detectors, skygrid, templates)
         self.t0 = t0
         self.delta = delta
         self.templates_directory = templates_directory
