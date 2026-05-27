@@ -59,6 +59,7 @@ from gts.core.data import FitStatus
 from gts.core.utils import SkyGrid, update_tte_trigtime, grid_to_healpix
 from gts.core.plots import TargetedLightcurves, Waterfall, plot_orbit
 from gts.core.skymap import O3_DGAUSS_Model, LigoHealPix
+from gts.core.parser import Parser
 from gts.core.search import TargetedSearch
 from gts.core.results import Results, calculate_top_snr, calculate_pe_variables, calculate_marginal_flux, calculate_coinclr
 from gts.core.filters import remove_pe, remove_dur_spec, downselect
@@ -71,59 +72,13 @@ progress_args = (TextColumn("[progress.description]{task.description}"), TaskPro
 
 def main():
 
-    protocols = ['HTTPS', 'FTP']
-
-    # TO DO: Move common parser argument setup to gts.core
-    parser = argparse.ArgumentParser("gbm_targeted_search.py", "Script for performing the GBM targeted search")
-    parser.add_argument('-t', '--time', default=None, help="Time for continuous data search.")
-    parser.add_argument('-d', '--dir', type=str, default=".", help="Base directory with templates folder.")
-    parser.add_argument('-b', '--burst-number', default=None, help="GBM burst number for on-board trigger search.")
-    parser.add_argument('-f', '--format', type=str, default=None, choices=[None, 'gps', 'fermi', 'datetime'], help="Format of --trigger option.")
-    parser.add_argument('-w', '--search-window-width', default=60, type=float, help="Search window around trigger time in seconds. The search will run from -width/2 until +width/2.")
-    parser.add_argument('--min-dur', default=0.064, type=float, help="Minimum duration of GRB transient in seconds.")
-    parser.add_argument('--max-dur', default=8.192, type=float, help="Maximum duration of GRB transient in seconds.")
-    parser.add_argument('--min-step', default=0.064, type=float, help="Minimum time step size in seconds used to move duration window.")
-    parser.add_argument('--num-steps', default=8, type=int, help="Sets duration window step size using duration/num_steps for steps larger than --min-step.")
-    parser.add_argument('-T', '--templates', default=["hard", "norm", "soft"], type=str, nargs="+", help="Spectral templates for search.")
-    parser.add_argument('-s', '--skymap', default=None, type=str, help="Optional skymap file.")
-    parser.add_argument('-o', '--results-dir', default='.', type=str, help="Directory for results output.")
-    parser.add_argument('-p', '--protocol', default='HTTPS', type=str, choices=protocols, help="Download Protocol.")
-    parser.add_argument('-R', '--data-range', default=[-500, 500], nargs=2, type=float, help="Data range.")
-    parser.add_argument('-r', '--background-range', default=[-500, 500], nargs="+", type=float, help="Background fit range(s).")
-    parser.add_argument('-x', '--background-window', default=125.0, type=float, help="NaivePossion background window.")
-    parser.add_argument('-y', '--background-poly', default=None, type=int, help="Polynomial background order.")
-    parser.add_argument('-z', '--background-robo', action='store_true', help="RoboLowess background.")
-    parser.add_argument('--flatten', action='store_true', help="Flatten multiorder skymaps.")
-    
     print("\n"  + " ".join(sys.argv) +  "\n")
 
+    parser = Parser("gts-gbm", "Script for performing the GBM targeted search")
     args = parser.parse_args()
 
     # default behavior
     trigger = args.burst_number
-
-    if args.time is None and args.skymap is None and args.burst_number is None:
-        raise ValueError("User must provide at least --time, --skymap, or --burst-number")
-
-    if args.format is None and args.time is not None:
-        raise ValueError("User must specify time format with --format")
-
-    if args.background_poly is None and len(args.background_range) != 2:
-        raise ValueError("User must provide two values to --background-range for NaivePoisson fit")
-
-    if args.background_poly is not None and len(args.background_range) % 2 != 0:
-        raise ValueError("User must provide an even number of values to --background-range for Polynomial fit")
-
-    if args.skymap:
-        args.skymap = LigoHealPix.open(args.skymap, min_nside=128, flatten=args.flatten, prob_only=False)
-        if args.time is None and args.burst_number is None:
-            args.time = args.skymap.trigtime
-            args.format = 'datetime'
-
-    if args.background_poly:
-        # reformat as separate fit intervals for the background polynomial
-        args.background_range = [
-            (args.background_range[i], args.background_range[i+1]) for i in range(0, len(args.background_range), 2)]
 
     # apply trigger formatting for Time() object trigger types.
     # Note: setting --time will over-ride skymap time.
