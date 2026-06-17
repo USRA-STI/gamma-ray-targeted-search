@@ -98,7 +98,7 @@ def photon_to_energy_flux(pflux, func, params, erange_in=(50.0, 300.0), erange_o
     return eflux
 
 
-def upper_limit_table(values, timescales=[0.128, 1.024, 8.192], sigma=3.0, erange_in=(50.0, 300.0), erange_out=(10.0, 1000.0)):
+def upper_limit_table(values, timescales=[0.128, 1.024, 8.192], sigma=3.0, erange_in=(50.0, 300.0), erange_out=(10.0, 1000.0), report=True):
     """Produce an upper limit report for given timescales and templates
 
     Args:
@@ -106,6 +106,8 @@ def upper_limit_table(values, timescales=[0.128, 1.024, 8.192], sigma=3.0, erang
             The template(s). Default is ['soft', 'norm', 'hard']
         timescales (list, optional):
             The timescale(s). Default is [0.128, 1.024, 8.192]
+        report (bool, optional):
+            Return text report
         **kwargs (optional):
             Keyword arguments to pass to to_energy_flux()
         
@@ -134,8 +136,11 @@ def upper_limit_table(values, timescales=[0.128, 1.024, 8.192], sigma=3.0, erang
                 table[i,j] = np.max(eflux_ul)
             except ValueError as err: print(err)
 
+    if report == False:
+        return table
+
     title = '\n{:2.1f} sigma Energy Flux Upper Limits '.format(sigma)
-    title+= ' ({0:2.0f}-{1:2.0f} keV):\n'.format(*erange_out)
+    title += ' ({0:2.0f}-{1:2.0f} keV):\n'.format(*erange_out)
     hdr = 'Timescale  '
     hdr += ''.join(['{:<9}'.format(v[0]) for v in values])
     div = '-'*len(hdr)
@@ -146,4 +151,3 @@ def upper_limit_table(values, timescales=[0.128, 1.024, 8.192], sigma=3.0, erang
         lines.append('{0} s:   {1}'.format(timescales[i], vals))
         
     return '\n'.join(lines)
- 
